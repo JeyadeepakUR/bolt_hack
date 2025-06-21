@@ -11,6 +11,36 @@ Transform brainstorming sessions into breakthrough innovations with AI-powered i
 - **Concept Generation**: Synthesize breakthrough ideas by combining extracted concepts
 - **Idea Remixing**: Generate variations and enhancements of existing concepts
 
+### 🔁 Advanced Features
+
+#### 1. Idea Evolution Timeline
+- **Multi-Session Tracking**: Monitor how ideas mature across multiple brainstorming sessions
+- **Evolution Stages**: Visual progression from "seed" → "refined" → "merged" → "ready-to-build"
+- **Session Metadata**: Track participants, dates, and development milestones
+- **Cross-Session Connections**: Identify how ideas evolve and combine over time
+- **Visual Timeline**: Interactive timeline showing idea progression with session markers
+
+#### 2. AI Remix Mode
+- **Intelligent Fusion**: AI-powered combination of unrelated ideas to break creative blocks
+- **Interactive Selection**: Choose any 2 ideas from the database for remixing
+- **Genealogy Tracking**: Complete history of which ideas were combined to create new ones
+- **Novelty Scoring**: Enhanced novelty assessment for remixed ideas
+- **Idea DNA Visualization**: Visual representation of the remix process and parent ideas
+
+#### 3. Cognitive Style Tagging
+- **NLP Analysis**: AI detection of thinking patterns behind ideas
+- **Style Classification**: Categorize ideas into analytical, visual, emotional, strategic, intuitive, and systematic styles
+- **Team Diversity Scoring**: 0-1 scale measuring cognitive variety in teams
+- **Missing Style Detection**: AI recommendations when certain thinking styles are absent
+- **Style-Based Matching**: Intelligent recommendations based on cognitive patterns
+
+#### 4. Team Voting & Rating
+- **Emoji Reactions**: Quick feedback system (🚀💡❤🤔) for rapid idea evaluation
+- **Star Rating System**: 1-5 star detailed scoring for comprehensive assessment
+- **Consensus Calculation**: Team agreement metrics and priority ranking
+- **Real-time Collaboration**: Live voting and commenting for team sessions
+- **Engagement Analytics**: Participation metrics and voting patterns
+
 ### 🎨 Professional UI/UX
 - **Three.js Background**: Immersive 3D particle system with connecting lines
 - **Glass Morphism**: Modern glass-like components with backdrop blur effects
@@ -74,6 +104,10 @@ src/
 │   ├── ExtractedIdeas.js     # Display extracted ideas
 │   ├── GeneratedIdeas.js     # Display AI-generated concepts
 │   ├── Connections.js        # Show idea relationships
+│   ├── IdeaEvolutionTimeline.js  # Evolution tracking across sessions
+│   ├── AIRemixMode.js        # AI-powered idea fusion
+│   ├── CognitiveStyleTagging.js  # Cognitive pattern analysis
+│   ├── TeamVotingRating.js   # Collaborative voting system
 │   └── Footer.js             # Application footer
 ├── App.js                # Main application component
 ├── index.js              # React entry point

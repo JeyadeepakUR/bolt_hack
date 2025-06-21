@@ -8,6 +8,10 @@ import DatabaseStats from './components/DatabaseStats';
 import ExtractedIdeas from './components/ExtractedIdeas';
 import GeneratedIdeas from './components/GeneratedIdeas';
 import Connections from './components/Connections';
+import IdeaEvolutionTimeline from './components/IdeaEvolutionTimeline';
+import AIRemixMode from './components/AIRemixMode';
+import CognitiveStyleTagging from './components/CognitiveStyleTagging';
+import TeamVotingRating from './components/TeamVotingRating';
 import Footer from './components/Footer';
 
 const App = () => {
@@ -18,6 +22,8 @@ const App = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [step, setStep] = useState('upload');
     const [ideaDatabase, setIdeaDatabase] = useState([]);
+    const [currentSessionId, setCurrentSessionId] = useState('session-' + Date.now());
+    const [activeFeature, setActiveFeature] = useState('main');
 
     // Simulated AI agents
     const extractorAgent = (text) => {
@@ -174,6 +180,86 @@ const App = () => {
         }
     };
 
+    const handleRemixComplete = (remixedIdeas) => {
+        setGeneratedIdeas(prev => [...prev, ...remixedIdeas]);
+    };
+
+    const renderFeatureContent = () => {
+        switch (activeFeature) {
+            case 'evolution':
+                return (
+                    <IdeaEvolutionTimeline
+                        ideaDatabase={ideaDatabase}
+                        currentSessionId={currentSessionId}
+                    />
+                );
+            case 'remix':
+                return (
+                    <AIRemixMode
+                        ideaDatabase={ideaDatabase}
+                        onRemixComplete={handleRemixComplete}
+                    />
+                );
+            case 'cognitive':
+                return (
+                    <CognitiveStyleTagging
+                        ideaDatabase={ideaDatabase}
+                        teamMembers={[]}
+                    />
+                );
+            case 'voting':
+                return (
+                    <TeamVotingRating
+                        generatedIdeas={generatedIdeas}
+                        teamMembers={[]}
+                    />
+                );
+            default:
+                return (
+                    <>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            {/* Left Column - Input & Controls */}
+                            <div className="space-y-6">
+                                <TranscriptUpload
+                                    transcript={transcript}
+                                    setTranscript={setTranscript}
+                                    onExtractIdeas={handleExtractIdeas}
+                                    isProcessing={isProcessing}
+                                    step={step}
+                                />
+
+                                <ActionButtons
+                                    extractedIdeas={extractedIdeas}
+                                    connections={connections}
+                                    onConnect={handleConnect}
+                                    onGenerate={handleGenerate}
+                                    isProcessing={isProcessing}
+                                    step={step}
+                                />
+
+                                <DatabaseStats
+                                    ideaDatabase={ideaDatabase}
+                                    generatedIdeas={generatedIdeas}
+                                />
+                            </div>
+
+                            {/* Right Column - Results */}
+                            <div className="space-y-6">
+                                <ExtractedIdeas extractedIdeas={extractedIdeas} />
+
+                                <GeneratedIdeas
+                                    generatedIdeas={generatedIdeas}
+                                    onRemix={handleRemix}
+                                />
+
+                                <Connections connections={connections} />
+                            </div>
+                        </div>
+                    </>
+                );
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
             {/* Three.js Background */}
@@ -185,47 +271,64 @@ const App = () => {
                     {/* Header */}
                     <Header />
 
-                    {/* Progress Steps */}
-                    <ProgressSteps currentStep={step} isProcessing={isProcessing} />
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* Left Column - Input & Controls */}
-                        <div className="space-y-6">
-                            <TranscriptUpload
-                                transcript={transcript}
-                                setTranscript={setTranscript}
-                                onExtractIdeas={handleExtractIdeas}
-                                isProcessing={isProcessing}
-                                step={step}
-                            />
-
-                            <ActionButtons
-                                extractedIdeas={extractedIdeas}
-                                connections={connections}
-                                onConnect={handleConnect}
-                                onGenerate={handleGenerate}
-                                isProcessing={isProcessing}
-                                step={step}
-                            />
-
-                            <DatabaseStats
-                                ideaDatabase={ideaDatabase}
-                                generatedIdeas={generatedIdeas}
-                            />
-                        </div>
-
-                        {/* Right Column - Results */}
-                        <div className="space-y-6">
-                            <ExtractedIdeas extractedIdeas={extractedIdeas} />
-
-                            <GeneratedIdeas
-                                generatedIdeas={generatedIdeas}
-                                onRemix={handleRemix}
-                            />
-
-                            <Connections connections={connections} />
+                    {/* Feature Navigation */}
+                    <div className="mb-8">
+                        <div className="flex flex-wrap gap-2 justify-center">
+                            <button
+                                onClick={() => setActiveFeature('main')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeFeature === 'main'
+                                        ? 'bg-primary-600 text-white shadow-lg'
+                                        : 'bg-white/80 text-gray-700 hover:bg-white hover:shadow-md'
+                                    }`}
+                            >
+                                Main Flow
+                            </button>
+                            <button
+                                onClick={() => setActiveFeature('evolution')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeFeature === 'evolution'
+                                        ? 'bg-primary-600 text-white shadow-lg'
+                                        : 'bg-white/80 text-gray-700 hover:bg-white hover:shadow-md'
+                                    }`}
+                            >
+                                🔁 Evolution Timeline
+                            </button>
+                            <button
+                                onClick={() => setActiveFeature('remix')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeFeature === 'remix'
+                                        ? 'bg-primary-600 text-white shadow-lg'
+                                        : 'bg-white/80 text-gray-700 hover:bg-white hover:shadow-md'
+                                    }`}
+                            >
+                                🧬 AI Remix Mode
+                            </button>
+                            <button
+                                onClick={() => setActiveFeature('cognitive')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeFeature === 'cognitive'
+                                        ? 'bg-primary-600 text-white shadow-lg'
+                                        : 'bg-white/80 text-gray-700 hover:bg-white hover:shadow-md'
+                                    }`}
+                            >
+                                🧠 Cognitive Analysis
+                            </button>
+                            <button
+                                onClick={() => setActiveFeature('voting')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeFeature === 'voting'
+                                        ? 'bg-primary-600 text-white shadow-lg'
+                                        : 'bg-white/80 text-gray-700 hover:bg-white hover:shadow-md'
+                                    }`}
+                            >
+                                ⭐ Team Voting
+                            </button>
                         </div>
                     </div>
+
+                    {/* Progress Steps - Only show for main flow */}
+                    {activeFeature === 'main' && (
+                        <ProgressSteps currentStep={step} isProcessing={isProcessing} />
+                    )}
+
+                    {/* Feature Content */}
+                    {renderFeatureContent()}
 
                     {/* Footer */}
                     <Footer generatedIdeas={generatedIdeas} />
