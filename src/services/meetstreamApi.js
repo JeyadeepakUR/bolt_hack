@@ -16,7 +16,7 @@ class MeetStreamAPI {
     // Get headers for API requests
     getHeaders() {
         return {
-            'Authorization': `ApiKey=${this.apiKey}`,
+            'Authorization': `ApiKey ${this.apiKey}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json'
         };
