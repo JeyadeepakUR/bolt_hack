@@ -1,7 +1,7 @@
 // API Configuration
 export const API_CONFIG = {
     MEETSTREAM: {
-        API_KEY: 'ms_47eUPCS2y9OzT2qMqgSS8toNQltcAmsg',
+        API_KEY: "ms_H3XjWL4qeh0X9GqshgbZT9ku3MnBnI04",
         BASE_URL: '/v1',
         ENDPOINTS: {
             MEETINGS: '/meetings',
