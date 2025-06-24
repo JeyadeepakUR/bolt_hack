@@ -4,6 +4,7 @@ export const API_CONFIG = {
         // Use the working API key from the documentation
         API_KEY: 'ms_QwsHGaTmjVEvUiiwdNWzdI03LifdoN63',
         BASE_URL: 'https://api.meetstream.ai/v1',
+        BASE_URL_DEV: '/v1', // Relative path for development proxy
         ENDPOINTS: {
             MEETINGS: '/meetings',
             LIVE_MEETINGS: '/meetings/live',
@@ -29,6 +30,8 @@ export const getApiConfig = () => {
             MEETSTREAM: {
                 ...API_CONFIG.MEETSTREAM,
                 API_KEY: API_CONFIG.MEETSTREAM.API_KEY,
+                // Use relative path in development to avoid CORS issues
+                BASE_URL: env === 'development' ? API_CONFIG.MEETSTREAM.BASE_URL_DEV : API_CONFIG.MEETSTREAM.BASE_URL,
             }
         };
     }
@@ -38,6 +41,8 @@ export const getApiConfig = () => {
         MEETSTREAM: {
             ...API_CONFIG.MEETSTREAM,
             API_KEY: apiKey,
+            // Use relative path in development to avoid CORS issues
+            BASE_URL: env === 'development' ? API_CONFIG.MEETSTREAM.BASE_URL_DEV : API_CONFIG.MEETSTREAM.BASE_URL,
         }
     };
 };
