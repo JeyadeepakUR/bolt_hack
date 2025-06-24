@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Calendar, Users, Clock, Download, Loader2, Wifi, WifiOff, Bot, Mic, AlertCircle, RefreshCw } from 'lucide-react';
+import { Search, Calendar, Users, Clock, Download, Loader2, Wifi, WifiOff, Bot, Mic, AlertCircle, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import MeetStreamAPI from '../services/meetstreamApi';
 
@@ -13,6 +13,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
     const [error, setError] = useState('');
     const [activeTab, setActiveTab] = useState('recent');
     const [connectionStatus, setConnectionStatus] = useState('checking');
+    const [apiTestResults, setApiTestResults] = useState({});
 
     const meetstreamAPI = new MeetStreamAPI();
 
@@ -21,32 +22,119 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
         checkConnectionAndLoadData();
     }, []);
 
+    const testApiEndpoints = async () => {
+        const endpoints = [
+            { name: 'User Account', endpoint: '/api/v1/user/account' },
+            { name: 'Bots List', endpoint: '/api/v1/bots' },
+            { name: 'User Bots', endpoint: '/api/v1/user/bots' },
+            { name: 'Meetings', endpoint: '/api/v1/meetings' },
+            { name: 'User Meetings', endpoint: '/api/v1/user/meetings' }
+        ];
+
+        const results = {};
+        
+        for (const { name, endpoint } of endpoints) {
+            try {
+                const url = `${meetstreamAPI.baseURL}${endpoint}`;
+                console.log(`Testing endpoint: ${url}`);
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: meetstreamAPI.getHeaders(),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    results[name] = { 
+                        status: 'success', 
+                        data: data,
+                        endpoint: endpoint
+                    };
+                    console.log(`✅ ${name} (${endpoint}):`, data);
+                } else {
+                    const errorText = await response.text();
+                    results[name] = { 
+                        status: 'error', 
+                        error: `${response.status}: ${errorText}`,
+                        endpoint: endpoint
+                    };
+                    console.log(`❌ ${name} (${endpoint}):`, response.status, errorText);
+                }
+            } catch (error) {
+                results[name] = { 
+                    status: 'error', 
+                    error: error.message,
+                    endpoint: endpoint
+                };
+                console.log(`❌ ${name} (${endpoint}):`, error.message);
+            }
+        }
+
+        setApiTestResults(results);
+        return results;
+    };
+
     const checkConnectionAndLoadData = async () => {
         setConnectionStatus('checking');
+        setError('');
+        
         try {
-            // Try to make a simple API call to check connection
-            await loadRecentMeetings();
-            await loadLiveMeetings();
-            setConnectionStatus('connected');
+            console.log('🔍 Testing API endpoints to find real data...');
+            const testResults = await testApiEndpoints();
+            
+            // Check if any endpoint returned real data
+            const successfulEndpoints = Object.entries(testResults).filter(([name, result]) => result.status === 'success');
+            
+            if (successfulEndpoints.length > 0) {
+                console.log(`✅ Found ${successfulEndpoints.length} working endpoints`);
+                setConnectionStatus('connected');
+                
+                // Try to load real data
+                await loadRecentMeetings();
+                await loadLiveMeetings();
+            } else {
+                console.log('❌ No working endpoints found, using demo data');
+                setConnectionStatus('disconnected');
+                setError('Could not connect to MeetStream API. All endpoints returned errors. Using demo data.');
+                
+                // Load demo data
+                setMeetings(meetstreamAPI.getMockMeetings());
+                setLiveMeetings(meetstreamAPI.getMockLiveMeetings());
+            }
         } catch (error) {
             console.error('Connection check failed:', error);
             setConnectionStatus('disconnected');
+            setError(`Connection failed: ${error.message}`);
+            
+            // Load demo data as fallback
+            setMeetings(meetstreamAPI.getMockMeetings());
+            setLiveMeetings(meetstreamAPI.getMockLiveMeetings());
         }
     };
 
     const loadRecentMeetings = async () => {
         setIsLoadingMeetings(true);
-        setError('');
         try {
-            console.log('Loading recent meetings (completed bots)...');
+            console.log('📥 Loading recent meetings (completed bots)...');
             const recentMeetings = await meetstreamAPI.getRecentMeetings(15);
             console.log('Recent meetings loaded:', recentMeetings);
-            setMeetings(recentMeetings);
+            
+            if (recentMeetings.length > 0 && recentMeetings[0].isReal !== false) {
+                console.log('✅ Real meeting data found!');
+                setMeetings(recentMeetings);
+                setConnectionStatus('connected');
+            } else {
+                console.log('📋 Using demo data (no real meetings found)');
+                setMeetings(recentMeetings);
+                if (connectionStatus !== 'connected') {
+                    setConnectionStatus('demo');
+                }
+            }
         } catch (err) {
             console.error('Error loading recent meetings:', err);
             setError('Failed to load recent meetings. Using demo data.');
-            // Load mock data as fallback
             setMeetings(meetstreamAPI.getMockMeetings());
+            setConnectionStatus('disconnected');
         } finally {
             setIsLoadingMeetings(false);
         }
@@ -54,13 +142,13 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
 
     const loadLiveMeetings = async () => {
         try {
-            console.log('Loading live meetings (active bots)...');
+            console.log('📡 Loading live meetings (active bots)...');
             const live = await meetstreamAPI.getLiveMeetings();
             console.log('Live meetings loaded:', live);
             setLiveMeetings(live);
         } catch (err) {
             console.error('Error loading live meetings:', err);
-            setLiveMeetings([]);
+            setLiveMeetings(meetstreamAPI.getMockLiveMeetings());
         }
     };
 
@@ -73,7 +161,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
         setIsLoadingMeetings(true);
         setError('');
         try {
-            console.log('Searching meetings for:', searchQuery);
+            console.log('🔍 Searching meetings for:', searchQuery);
             const searchResults = await meetstreamAPI.searchMeetings(searchQuery);
             console.log('Search results:', searchResults);
             setMeetings(searchResults.meetings || []);
@@ -92,17 +180,17 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
         setError('');
 
         try {
-            console.log('Loading transcript for meeting:', meeting.id);
+            console.log('📄 Loading transcript for meeting:', meeting.id);
             
             // Check if this is a real bot or demo data
             if (meeting.isReal === false) {
-                console.log('Using demo transcript for demo meeting');
+                console.log('📋 Using demo transcript for demo meeting');
                 const mockTranscript = meetstreamAPI.getMockTranscript();
                 const formattedTranscript = meetstreamAPI.formatTranscriptText(mockTranscript);
                 onTranscriptLoaded(formattedTranscript, meeting.title || meeting.bot_name || 'Demo Meeting');
             } else {
                 // Try to get real transcript
-                console.log('Attempting to fetch real transcript...');
+                console.log('📡 Attempting to fetch real transcript...');
                 const transcriptData = await meetstreamAPI.getMeetingTranscriptWithFallback(meeting.id);
                 console.log('Transcript data received:', transcriptData);
                 
@@ -149,9 +237,9 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
     const getMeetingStatus = (meeting) => {
         const status = meeting.status || 'unknown';
         
-        if (status === 'live' || status === 'active') {
+        if (status === 'live' || status === 'active' || status === 'running' || status === 'in_progress') {
             return { label: 'Live', color: 'bg-red-100 text-red-700', icon: Wifi };
-        } else if (status === 'completed' || status === 'finished') {
+        } else if (status === 'completed' || status === 'finished' || status === 'ended') {
             return { label: 'Completed', color: 'bg-green-100 text-green-700', icon: Bot };
         } else {
             return { label: 'Unknown', color: 'bg-gray-100 text-gray-700', icon: WifiOff };
@@ -161,11 +249,13 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
     const getConnectionStatusDisplay = () => {
         switch (connectionStatus) {
             case 'checking':
-                return { color: 'text-yellow-600', icon: Loader2, label: 'Checking connection...', spinning: true };
+                return { color: 'text-yellow-600', icon: Loader2, label: 'Testing API endpoints...', spinning: true };
             case 'connected':
-                return { color: 'text-green-600', icon: Wifi, label: 'Connected to MeetStream API', spinning: false };
+                return { color: 'text-green-600', icon: CheckCircle, label: 'Connected - Real data available', spinning: false };
+            case 'demo':
+                return { color: 'text-blue-600', icon: Bot, label: 'Connected - Using demo data', spinning: false };
             case 'disconnected':
-                return { color: 'text-red-600', icon: WifiOff, label: 'Using demo data (API unavailable)', spinning: false };
+                return { color: 'text-red-600', icon: XCircle, label: 'API unavailable - Demo data only', spinning: false };
             default:
                 return { color: 'text-gray-600', icon: AlertCircle, label: 'Unknown status', spinning: false };
         }
@@ -217,6 +307,27 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                     </div>
                 </div>
             </div>
+
+            {/* API Test Results */}
+            {Object.keys(apiTestResults).length > 0 && (
+                <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">API Endpoint Test Results:</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                        {Object.entries(apiTestResults).map(([name, result]) => (
+                            <div key={name} className="flex items-center space-x-2">
+                                {result.status === 'success' ? (
+                                    <CheckCircle className="w-3 h-3 text-green-600" />
+                                ) : (
+                                    <XCircle className="w-3 h-3 text-red-600" />
+                                )}
+                                <span className={result.status === 'success' ? 'text-green-700' : 'text-red-700'}>
+                                    {name}: {result.status === 'success' ? 'Working' : 'Failed'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Tabs */}
             <div className="flex space-x-1 mb-6 bg-gray-100 rounded-lg p-1">
@@ -304,12 +415,18 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                 : 'Your completed meeting bots will appear here'
                             }
                         </p>
+                        {connectionStatus === 'connected' && (
+                            <p className="text-xs text-blue-600 mt-2">
+                                API is connected but no bots found. Create a bot in MeetStream to see real data.
+                            </p>
+                        )}
                     </div>
                 ) : (
                     currentMeetings.map((meeting) => {
                         const status = getMeetingStatus(meeting);
                         const StatusIcon = status.icon;
                         const isDemo = meeting.isReal === false;
+                        const isReal = meeting.isReal === true;
                         
                         return (
                             <motion.div
@@ -318,7 +435,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                     selectedMeeting?.id === meeting.id
                                         ? 'border-blue-500 bg-blue-50'
                                         : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                                } ${isDemo ? 'border-l-4 border-l-orange-400' : ''}`}
+                                } ${isDemo ? 'border-l-4 border-l-orange-400' : ''} ${isReal ? 'border-l-4 border-l-green-400' : ''}`}
                                 onClick={() => handleMeetingSelect(meeting)}
                                 whileHover={{ scale: 1.01 }}
                                 whileTap={{ scale: 0.99 }}
@@ -336,6 +453,11 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                             {isDemo && (
                                                 <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded-full">
                                                     Demo Data
+                                                </span>
+                                            )}
+                                            {isReal && (
+                                                <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+                                                    Real Data
                                                 </span>
                                             )}
                                             {meeting.bot_name && (
@@ -420,6 +542,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                             <p className="text-green-700 text-sm">
                                 Ready to extract ideas from this meeting
                                 {selectedMeeting.isReal === false && ' (using demo transcript)'}
+                                {selectedMeeting.isReal === true && ' (real transcript data)'}
                             </p>
                         </div>
                     </div>

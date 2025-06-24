@@ -62,20 +62,91 @@ class MeetStreamAPI {
         }
     }
 
-    // Get all user bots (this represents the user's meeting history)
+    // Get user account information (this might give us access to user's bots)
+    async getUserAccount() {
+        try {
+            const url = `${this.baseURL}/api/v1/user/account`;
+            console.log(`Fetching user account from URL: ${url}`);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: this.getHeaders(),
+            });
+
+            const data = await this.handleResponse(response, 'fetch user account');
+            return data;
+        } catch (error) {
+            console.error('Error fetching user account:', error);
+            throw error;
+        }
+    }
+
+    // Get user's bots/meetings using a different approach
     async getUserBots() {
         try {
-            // Since there's no direct endpoint to list all user bots in the Postman collection,
-            // we'll need to implement a workaround or use a different approach
             console.log('Attempting to fetch user bots...');
             
-            // Try to get user information first (if such endpoint exists)
-            // For now, we'll return mock data but with real API structure
-            console.warn('No direct endpoint to list all user bots. Using mock data structure.');
-            return this.getMockBotsWithRealStructure();
+            // Try different potential endpoints that might list user's bots
+            const possibleEndpoints = [
+                '/api/v1/bots',
+                '/api/v1/user/bots',
+                '/api/v1/meetings',
+                '/api/v1/user/meetings'
+            ];
+
+            for (const endpoint of possibleEndpoints) {
+                try {
+                    const url = `${this.baseURL}${endpoint}`;
+                    console.log(`Trying endpoint: ${url}`);
+                    
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        headers: this.getHeaders(),
+                    });
+
+                    if (response.ok) {
+                        const data = await this.handleResponse(response, `fetch from ${endpoint}`);
+                        console.log(`Success with endpoint ${endpoint}:`, data);
+                        
+                        // Process the response based on its structure
+                        if (Array.isArray(data)) {
+                            return data;
+                        } else if (data.bots && Array.isArray(data.bots)) {
+                            return data.bots;
+                        } else if (data.meetings && Array.isArray(data.meetings)) {
+                            return data.meetings;
+                        } else if (data.results && Array.isArray(data.results)) {
+                            return data.results;
+                        } else {
+                            console.log('Unexpected data structure:', data);
+                            return [data]; // Wrap single object in array
+                        }
+                    }
+                } catch (error) {
+                    console.log(`Endpoint ${endpoint} failed:`, error.message);
+                    continue;
+                }
+            }
+
+            // If no endpoints work, try to get user account info
+            try {
+                const accountData = await this.getUserAccount();
+                console.log('User account data:', accountData);
+                
+                if (accountData.bots) {
+                    return accountData.bots;
+                } else if (accountData.meetings) {
+                    return accountData.meetings;
+                }
+            } catch (error) {
+                console.log('User account endpoint also failed:', error.message);
+            }
+
+            console.log('No working endpoints found, using demo data');
+            return [];
         } catch (error) {
             console.error('Error fetching user bots:', error);
-            return this.getMockBotsWithRealStructure();
+            return [];
         }
     }
 
@@ -213,82 +284,76 @@ class MeetStreamAPI {
         }
     }
 
-    // Fetch real user bots with status checking (similar to Rebirth project approach)
+    // Fetch real user bots with enhanced discovery
     async fetchRealUserBots() {
         try {
-            console.log('Attempting to fetch real user bots...');
+            console.log('Attempting to fetch real user bots with enhanced discovery...');
             
-            // Since there's no direct endpoint to list all user bots,
-            // we would need to implement a different approach:
-            // 1. Store bot IDs locally when they're created
-            // 2. Use a backend service to track user's bots
-            // 3. Use webhook callbacks to maintain bot list
+            // First, try to get the list of user's bots
+            const userBots = await this.getUserBots();
+            console.log('Raw user bots data:', userBots);
             
-            // For now, let's try to get some sample bot IDs and check their status
-            const sampleBotIds = this.getSampleBotIds();
-            const realBots = [];
-            
-            for (const botId of sampleBotIds) {
+            if (!userBots || userBots.length === 0) {
+                console.log('No bots found from user endpoints');
+                return [];
+            }
+
+            // Process each bot to get detailed information
+            const processedBots = [];
+            for (const bot of userBots) {
                 try {
-                    const botStatus = await this.getBotStatus(botId);
-                    const botDetails = await this.getBotDetails(botId);
+                    const botId = bot.id || bot.bot_id || bot.uuid;
+                    if (!botId) {
+                        console.warn('Bot missing ID:', bot);
+                        continue;
+                    }
+
+                    console.log(`Processing bot: ${botId}`);
                     
-                    realBots.push({
+                    // Get bot status and details
+                    let botStatus = null;
+                    let botDetails = null;
+                    
+                    try {
+                        botStatus = await this.getBotStatus(botId);
+                        console.log(`Bot ${botId} status:`, botStatus);
+                    } catch (error) {
+                        console.warn(`Could not get status for bot ${botId}:`, error.message);
+                    }
+                    
+                    try {
+                        botDetails = await this.getBotDetails(botId);
+                        console.log(`Bot ${botId} details:`, botDetails);
+                    } catch (error) {
+                        console.warn(`Could not get details for bot ${botId}:`, error.message);
+                    }
+
+                    // Combine all the information
+                    const processedBot = {
                         id: botId,
-                        status: botStatus,
-                        details: botDetails,
-                        isReal: true
-                    });
+                        ...bot, // Original bot data
+                        status: botStatus?.status || bot.status || 'unknown',
+                        details: botDetails || {},
+                        isReal: true,
+                        // Normalize common fields
+                        bot_name: botDetails?.bot_name || bot.bot_name || bot.name || `Bot ${botId}`,
+                        created_at: botDetails?.created_at || bot.created_at || bot.start_time,
+                        transcript_id: botDetails?.transcript_id || bot.transcript_id,
+                        meeting_link: botDetails?.meeting_link || bot.meeting_link || bot.join_url,
+                        participants: botDetails?.participants || bot.participants || []
+                    };
+
+                    processedBots.push(processedBot);
                 } catch (error) {
-                    console.warn(`Could not fetch data for bot ${botId}:`, error.message);
+                    console.error('Error processing bot:', error);
                 }
             }
-            
-            if (realBots.length > 0) {
-                console.log(`Found ${realBots.length} real bots`);
-                return realBots;
-            } else {
-                console.log('No real bots found, using mock data');
-                return this.getMockBotsWithRealStructure();
-            }
+
+            console.log(`Successfully processed ${processedBots.length} real bots`);
+            return processedBots;
         } catch (error) {
             console.error('Error fetching real user bots:', error);
-            return this.getMockBotsWithRealStructure();
-        }
-    }
-
-    // Get sample bot IDs (in a real implementation, these would come from your backend or local storage)
-    getSampleBotIds() {
-        // These would be actual bot IDs from your MeetStream account
-        // You would get these from:
-        // 1. Local storage after creating bots
-        // 2. Your backend database
-        // 3. Webhook callbacks when bots are created
-        return [
-            // Add your actual bot IDs here when you have them
-            // 'bot_12345',
-            // 'bot_67890',
-        ];
-    }
-
-    // Legacy methods for compatibility with existing UI
-    async getLiveMeetings() {
-        try {
-            console.log('Fetching live meetings (active bots)...');
-            const userBots = await this.fetchRealUserBots();
-            
-            // Filter for live/active bots
-            const liveBots = userBots.filter(bot => {
-                if (bot.isReal && bot.status) {
-                    return bot.status.status === 'active' || bot.status.status === 'live';
-                }
-                return bot.status === 'live' || bot.status === 'active';
-            });
-            
-            return liveBots.length > 0 ? liveBots : this.getMockLiveMeetings();
-        } catch (error) {
-            console.error('Error fetching live meetings:', error);
-            return this.getMockLiveMeetings();
+            return [];
         }
     }
 
@@ -298,25 +363,61 @@ class MeetStreamAPI {
             console.log('Fetching recent meetings (completed bots)...');
             const userBots = await this.fetchRealUserBots();
             
+            if (userBots.length === 0) {
+                console.log('No real bots found, using demo data');
+                return this.getMockMeetings().slice(0, count);
+            }
+
             // Filter for completed bots and sort by date
             const completedBots = userBots
                 .filter(bot => {
-                    if (bot.isReal && bot.status) {
-                        return bot.status.status === 'completed' || bot.status.status === 'finished';
-                    }
-                    return bot.status === 'completed';
+                    const status = bot.status || 'unknown';
+                    return status === 'completed' || status === 'finished' || status === 'ended';
                 })
                 .sort((a, b) => {
-                    const dateA = new Date(a.details?.created_at || a.start_time || 0);
-                    const dateB = new Date(b.details?.created_at || b.start_time || 0);
+                    const dateA = new Date(a.created_at || a.start_time || 0);
+                    const dateB = new Date(b.created_at || b.start_time || 0);
                     return dateB - dateA; // Most recent first
                 })
                 .slice(0, count);
+
+            console.log(`Found ${completedBots.length} completed bots`);
             
-            return completedBots.length > 0 ? completedBots : this.getMockMeetings().slice(0, count);
+            // If no completed bots, show all bots
+            if (completedBots.length === 0) {
+                console.log('No completed bots found, showing all bots');
+                return userBots.slice(0, count);
+            }
+
+            return completedBots;
         } catch (error) {
             console.error('Error fetching recent meetings:', error);
             return this.getMockMeetings().slice(0, count);
+        }
+    }
+
+    // Get live meetings (active bots)
+    async getLiveMeetings() {
+        try {
+            console.log('Fetching live meetings (active bots)...');
+            const userBots = await this.fetchRealUserBots();
+            
+            if (userBots.length === 0) {
+                console.log('No real bots found, using demo data');
+                return this.getMockLiveMeetings();
+            }
+
+            // Filter for live/active bots
+            const liveBots = userBots.filter(bot => {
+                const status = bot.status || 'unknown';
+                return status === 'active' || status === 'live' || status === 'running' || status === 'in_progress';
+            });
+
+            console.log(`Found ${liveBots.length} live bots`);
+            return liveBots;
+        } catch (error) {
+            console.error('Error fetching live meetings:', error);
+            return this.getMockLiveMeetings();
         }
     }
 
@@ -326,9 +427,21 @@ class MeetStreamAPI {
             console.log('Searching meetings for:', query);
             const allBots = await this.fetchRealUserBots();
             
+            if (allBots.length === 0) {
+                console.log('No real bots found, searching demo data');
+                const mockMeetings = this.getMockMeetings();
+                const filteredMeetings = mockMeetings.filter(meeting => 
+                    meeting.title.toLowerCase().includes(query.toLowerCase()) ||
+                    meeting.participants.some(p => 
+                        (typeof p === 'string' ? p : p.name || p.email || '').toLowerCase().includes(query.toLowerCase())
+                    )
+                );
+                return { meetings: filteredMeetings };
+            }
+
             const filteredBots = allBots.filter(bot => {
-                const title = bot.details?.bot_name || bot.title || '';
-                const participants = bot.details?.participants || bot.participants || [];
+                const title = bot.bot_name || bot.name || '';
+                const participants = bot.participants || [];
                 
                 return title.toLowerCase().includes(query.toLowerCase()) ||
                        participants.some(p => 
@@ -336,6 +449,7 @@ class MeetStreamAPI {
                        );
             });
             
+            console.log(`Search found ${filteredBots.length} matching bots`);
             return { meetings: filteredBots };
         } catch (error) {
             console.error('Error searching meetings:', error);
@@ -349,7 +463,7 @@ class MeetStreamAPI {
             console.log('Fetching transcript for meeting:', meetingId);
             
             // If this is a real bot, try to get its transcript
-            if (meetingId.startsWith('bot_')) {
+            if (meetingId.startsWith('bot_') && !meetingId.includes('demo')) {
                 try {
                     // First get bot details to find transcript ID
                     const botDetails = await this.getBotDetails(meetingId);
@@ -358,6 +472,7 @@ class MeetStreamAPI {
                     if (botDetails && botDetails.transcript_id) {
                         console.log('Found transcript ID:', botDetails.transcript_id);
                         const transcript = await this.getTranscript(botDetails.transcript_id);
+                        console.log('Real transcript fetched:', transcript);
                         return transcript;
                     } else {
                         console.warn('No transcript ID found in bot details');
@@ -368,8 +483,9 @@ class MeetStreamAPI {
             }
             
             // If this looks like a transcript ID, use it directly
-            if (meetingId.startsWith('transcript_')) {
+            if (meetingId.startsWith('transcript_') && !meetingId.includes('demo')) {
                 const transcriptId = meetingId.replace('transcript_', '');
+                console.log('Fetching transcript directly with ID:', transcriptId);
                 return await this.getTranscript(transcriptId);
             }
             
@@ -424,96 +540,62 @@ class MeetStreamAPI {
         return JSON.stringify(transcriptData, null, 2);
     }
 
-    // Get mock bots with real API structure
-    getMockBotsWithRealStructure() {
+    // Get mock meetings for fallback
+    getMockMeetings() {
         return [
             {
                 id: 'bot_demo_001',
-                bot_name: 'Weekly Team Standup Bot',
+                title: 'Weekly Team Standup (Demo)',
+                start_time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+                duration: 1800,
+                participants: [
+                    { name: 'Alice Johnson', email: 'alice@company.com' },
+                    { name: 'Bob Smith', email: 'bob@company.com' },
+                    { name: 'Carol Davis', email: 'carol@company.com' }
+                ],
                 status: 'completed',
-                created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-                meeting_link: 'https://zoom.us/j/123456789',
+                bot_name: 'weekly-standup-bot',
                 transcript_id: 'transcript_demo_001',
-                details: {
-                    bot_name: 'Weekly Team Standup Bot',
-                    participants: ['alice@company.com', 'bob@company.com', 'carol@company.com'],
-                    duration: 1800,
-                    audio_required: true,
-                    video_required: false
-                },
                 isReal: false
             },
             {
                 id: 'bot_demo_002',
-                bot_name: 'Product Strategy Review Bot',
+                title: 'Product Strategy Review (Demo)',
+                start_time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+                duration: 3600,
+                participants: [
+                    { name: 'David Wilson', email: 'david@company.com' },
+                    { name: 'Emma Brown', email: 'emma@company.com' },
+                    { name: 'Frank Miller', email: 'frank@company.com' }
+                ],
                 status: 'completed',
-                created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-                meeting_link: 'https://meet.google.com/abc-defg-hij',
+                bot_name: 'strategy-bot',
                 transcript_id: 'transcript_demo_002',
-                details: {
-                    bot_name: 'Product Strategy Review Bot',
-                    participants: ['david@company.com', 'emma@company.com', 'frank@company.com'],
-                    duration: 3600,
-                    audio_required: true,
-                    video_required: true
-                },
-                isReal: false
-            },
-            {
-                id: 'bot_demo_003',
-                bot_name: 'Client Presentation Bot',
-                status: 'completed',
-                created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-                meeting_link: 'https://teams.microsoft.com/l/meetup-join/xyz',
-                transcript_id: 'transcript_demo_003',
-                details: {
-                    bot_name: 'Client Presentation Bot',
-                    participants: ['grace@company.com', 'henry@client.com', 'ivy@client.com'],
-                    duration: 2700,
-                    audio_required: true,
-                    video_required: false
-                },
                 isReal: false
             }
         ];
     }
 
-    // Get mock live meetings (representing active bots)
+    // Get mock live meetings
     getMockLiveMeetings() {
         return [
             {
-                id: 'bot_live_001',
-                bot_name: 'Daily Standup Bot - Live',
+                id: 'bot_live_demo_001',
+                title: 'Daily Standup - Live (Demo)',
+                start_time: new Date().toISOString(),
                 status: 'live',
-                created_at: new Date().toISOString(),
+                participants: [
+                    { name: 'Alice Johnson', email: 'alice@company.com' },
+                    { name: 'Bob Smith', email: 'bob@company.com' }
+                ],
+                bot_name: 'standup-bot',
                 meeting_link: 'https://zoom.us/j/987654321',
-                details: {
-                    bot_name: 'Daily Standup Bot - Live',
-                    participants: ['alice@company.com', 'bob@company.com'],
-                    audio_required: true,
-                    video_required: false
-                },
                 isReal: false
             }
         ];
     }
 
-    // Legacy methods for backward compatibility
-    getMockMeetings() {
-        return this.getMockBotsWithRealStructure().map(bot => ({
-            id: bot.id,
-            title: bot.bot_name || bot.details?.bot_name || 'Untitled Meeting',
-            start_time: bot.created_at,
-            duration: bot.details?.duration || 1800,
-            participants: bot.details?.participants || [],
-            status: bot.status,
-            bot_name: bot.bot_name,
-            transcript_id: bot.transcript_id,
-            meeting_link: bot.meeting_link
-        }));
-    }
-
-    // Get mock transcript with realistic meeting content
+    // Get mock transcript
     getMockTranscript() {
         return {
             transcript_id: 'transcript_demo_001',
@@ -572,7 +654,7 @@ class MeetStreamAPI {
         };
     }
 
-    // List meetings (legacy compatibility)
+    // Legacy methods for backward compatibility
     async listMeetings(limit = 10, offset = 0) {
         try {
             const meetings = await this.getRecentMeetings(limit);
@@ -583,10 +665,9 @@ class MeetStreamAPI {
         }
     }
 
-    // Get meeting details (legacy compatibility)
     async getMeetingDetails(meetingId) {
         try {
-            if (meetingId.startsWith('bot_')) {
+            if (meetingId.startsWith('bot_') && !meetingId.includes('demo')) {
                 const botDetails = await this.getBotDetails(meetingId);
                 return botDetails;
             }
@@ -600,7 +681,6 @@ class MeetStreamAPI {
         }
     }
 
-    // Get meeting transcript (legacy compatibility)
     async getMeetingTranscript(meetingId) {
         return this.getMeetingTranscriptWithFallback(meetingId);
     }
