@@ -15,17 +15,48 @@ class MeetStreamAPI {
         console.log('MeetStream API initialized with key:', this.apiKey ? `${this.apiKey.substring(0, 8)}...` : 'No API key');
     }
 
-    // Get headers for API requests - using Token authentication as per Postman collection
-    getHeaders() {
-        return {
-            'Authorization': `Token ${this.apiKey}`,
+    // Get headers for API requests - try different authentication methods
+    getHeaders(authType = 'token') {
+        const baseHeaders = {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            'User-Agent': 'DewDrop-AI/1.0'
         };
+
+        switch (authType) {
+            case 'token':
+                return {
+                    ...baseHeaders,
+                    'Authorization': `Token ${this.apiKey}`
+                };
+            case 'bearer':
+                return {
+                    ...baseHeaders,
+                    'Authorization': `Bearer ${this.apiKey}`
+                };
+            case 'apikey':
+                return {
+                    ...baseHeaders,
+                    'X-API-Key': this.apiKey
+                };
+            case 'basic':
+                return {
+                    ...baseHeaders,
+                    'Authorization': `Basic ${btoa(this.apiKey + ':')}`
+                };
+            default:
+                return baseHeaders;
+        }
     }
 
-    // Handle API response errors
+    // Handle API response errors with better error parsing
     async handleResponse(response, operation) {
+        console.log(`Response for ${operation}:`, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: Object.fromEntries(response.headers.entries())
+        });
+
         if (!response.ok) {
             const errorText = await response.text();
             let errorMessage = `Failed to ${operation}: ${response.status} ${response.statusText}`;
@@ -36,6 +67,8 @@ class MeetStreamAPI {
                     errorMessage = `${operation} API Error: ${errorData.message}`;
                 } else if (errorData.detail) {
                     errorMessage = `${operation} API Error: ${errorData.detail}`;
+                } else if (errorData.error) {
+                    errorMessage = `${operation} API Error: ${errorData.error}`;
                 }
             } catch (e) {
                 // If error response is not JSON, use the text
@@ -62,305 +95,333 @@ class MeetStreamAPI {
         }
     }
 
-    // Get user account information (this might give us access to user's bots)
-    async getUserAccount() {
-        try {
-            const url = `${this.baseURL}/api/v1/user/account`;
-            console.log(`Fetching user account from URL: ${url}`);
-            
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: this.getHeaders(),
-            });
+    // Test different authentication methods
+    async testAuthentication() {
+        const authMethods = ['token', 'bearer', 'apikey', 'basic'];
+        const testEndpoint = '/api/v1/user/account';
+        
+        for (const authType of authMethods) {
+            try {
+                console.log(`Testing authentication method: ${authType}`);
+                const url = `${this.baseURL}${testEndpoint}`;
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: this.getHeaders(authType),
+                });
 
-            const data = await this.handleResponse(response, 'fetch user account');
-            return data;
+                if (response.ok) {
+                    console.log(`✅ Authentication successful with method: ${authType}`);
+                    const data = await this.handleResponse(response, `test auth ${authType}`);
+                    return { authType, data };
+                } else {
+                    console.log(`❌ Authentication failed with method: ${authType} - ${response.status}`);
+                }
+            } catch (error) {
+                console.log(`❌ Authentication error with method: ${authType} - ${error.message}`);
+            }
+        }
+        
+        return null;
+    }
+
+    // Comprehensive API discovery
+    async discoverAPI() {
+        console.log('🔍 Starting comprehensive API discovery...');
+        
+        // First, test authentication
+        const authResult = await this.testAuthentication();
+        let workingAuthType = 'token'; // default
+        
+        if (authResult) {
+            workingAuthType = authResult.authType;
+            console.log(`✅ Found working authentication: ${workingAuthType}`);
+        } else {
+            console.log('❌ No working authentication method found, trying with default');
+        }
+
+        // Test various endpoint patterns
+        const endpointPatterns = [
+            // User endpoints
+            '/api/v1/user',
+            '/api/v1/user/account',
+            '/api/v1/user/profile',
+            '/api/v1/me',
+            
+            // Bot endpoints
+            '/api/v1/bots',
+            '/api/v1/bots/list',
+            '/api/v1/user/bots',
+            '/api/v1/my/bots',
+            
+            // Meeting endpoints
+            '/api/v1/meetings',
+            '/api/v1/meetings/list',
+            '/api/v1/user/meetings',
+            '/api/v1/my/meetings',
+            
+            // Session endpoints
+            '/api/v1/sessions',
+            '/api/v1/user/sessions',
+            
+            // Transcript endpoints
+            '/api/v1/transcripts',
+            '/api/v1/user/transcripts',
+            
+            // Alternative API versions
+            '/api/v2/bots',
+            '/api/v2/meetings',
+            '/v1/bots',
+            '/v1/meetings'
+        ];
+
+        const results = {};
+        
+        for (const endpoint of endpointPatterns) {
+            try {
+                const url = `${this.baseURL}${endpoint}`;
+                console.log(`Testing endpoint: ${endpoint}`);
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: this.getHeaders(workingAuthType),
+                });
+
+                if (response.ok) {
+                    try {
+                        const data = await this.handleResponse(response, `discover ${endpoint}`);
+                        results[endpoint] = { 
+                            status: 'success', 
+                            data: data,
+                            dataType: this.analyzeDataStructure(data)
+                        };
+                        console.log(`✅ ${endpoint}: Success - ${results[endpoint].dataType}`);
+                    } catch (parseError) {
+                        results[endpoint] = { 
+                            status: 'success_no_parse', 
+                            error: parseError.message 
+                        };
+                        console.log(`⚠️ ${endpoint}: Success but couldn't parse response`);
+                    }
+                } else {
+                    const errorText = await response.text();
+                    results[endpoint] = { 
+                        status: 'error', 
+                        error: `${response.status}: ${errorText}`,
+                        statusCode: response.status
+                    };
+                    console.log(`❌ ${endpoint}: ${response.status} - ${errorText.substring(0, 100)}`);
+                }
+            } catch (error) {
+                results[endpoint] = { 
+                    status: 'error', 
+                    error: error.message 
+                };
+                console.log(`❌ ${endpoint}: Network error - ${error.message}`);
+            }
+        }
+
+        return { authType: workingAuthType, endpoints: results };
+    }
+
+    // Analyze data structure to understand what we got
+    analyzeDataStructure(data) {
+        if (!data) return 'empty';
+        
+        if (Array.isArray(data)) {
+            if (data.length === 0) return 'empty_array';
+            const firstItem = data[0];
+            if (firstItem.bot_id || firstItem.id) return 'bot_array';
+            if (firstItem.meeting_id) return 'meeting_array';
+            if (firstItem.transcript_id) return 'transcript_array';
+            return `array_of_${typeof firstItem}`;
+        }
+        
+        if (typeof data === 'object') {
+            const keys = Object.keys(data);
+            if (keys.includes('bots')) return 'object_with_bots';
+            if (keys.includes('meetings')) return 'object_with_meetings';
+            if (keys.includes('transcripts')) return 'object_with_transcripts';
+            if (keys.includes('user')) return 'user_object';
+            if (keys.includes('account')) return 'account_object';
+            return `object_with_keys_${keys.slice(0, 3).join('_')}`;
+        }
+        
+        return typeof data;
+    }
+
+    // Extract bots/meetings from discovered data
+    extractBotsFromDiscovery(discoveryResults) {
+        const { endpoints } = discoveryResults;
+        const allBots = [];
+        
+        for (const [endpoint, result] of Object.entries(endpoints)) {
+            if (result.status === 'success' && result.data) {
+                const bots = this.extractBotsFromData(result.data, endpoint);
+                if (bots.length > 0) {
+                    console.log(`Found ${bots.length} bots from ${endpoint}`);
+                    allBots.push(...bots);
+                }
+            }
+        }
+        
+        // Remove duplicates based on ID
+        const uniqueBots = allBots.filter((bot, index, self) => 
+            index === self.findIndex(b => (b.id || b.bot_id) === (bot.id || bot.bot_id))
+        );
+        
+        console.log(`Total unique bots found: ${uniqueBots.length}`);
+        return uniqueBots;
+    }
+
+    // Extract bots from various data structures
+    extractBotsFromData(data, source) {
+        const bots = [];
+        
+        if (Array.isArray(data)) {
+            // Direct array of bots
+            for (const item of data) {
+                if (this.looksLikeBot(item)) {
+                    bots.push(this.normalizeBot(item, source));
+                }
+            }
+        } else if (typeof data === 'object') {
+            // Check for nested arrays
+            const possibleArrayKeys = ['bots', 'meetings', 'sessions', 'data', 'results', 'items'];
+            for (const key of possibleArrayKeys) {
+                if (data[key] && Array.isArray(data[key])) {
+                    for (const item of data[key]) {
+                        if (this.looksLikeBot(item)) {
+                            bots.push(this.normalizeBot(item, source));
+                        }
+                    }
+                }
+            }
+            
+            // Check if the object itself is a bot
+            if (this.looksLikeBot(data)) {
+                bots.push(this.normalizeBot(data, source));
+            }
+        }
+        
+        return bots;
+    }
+
+    // Check if an object looks like a bot/meeting
+    looksLikeBot(obj) {
+        if (!obj || typeof obj !== 'object') return false;
+        
+        const botIndicators = [
+            'bot_id', 'id', 'uuid', 'meeting_id',
+            'bot_name', 'name', 'title',
+            'status', 'state',
+            'created_at', 'start_time', 'timestamp',
+            'transcript_id', 'recording_id'
+        ];
+        
+        const hasIndicators = botIndicators.some(indicator => obj.hasOwnProperty(indicator));
+        return hasIndicators;
+    }
+
+    // Normalize bot data to consistent format
+    normalizeBot(bot, source) {
+        const id = bot.id || bot.bot_id || bot.uuid || bot.meeting_id || `unknown_${Date.now()}`;
+        
+        return {
+            id: id,
+            title: bot.title || bot.name || bot.bot_name || `Meeting ${id}`,
+            bot_name: bot.bot_name || bot.name || bot.title || 'Unknown Bot',
+            status: bot.status || bot.state || 'unknown',
+            created_at: bot.created_at || bot.start_time || bot.timestamp || new Date().toISOString(),
+            start_time: bot.start_time || bot.created_at || bot.timestamp,
+            duration: bot.duration || bot.length,
+            participants: bot.participants || bot.attendees || [],
+            transcript_id: bot.transcript_id || bot.recording_id,
+            meeting_link: bot.meeting_link || bot.join_url || bot.url,
+            isReal: true,
+            source: source,
+            originalData: bot
+        };
+    }
+
+    // Main method to get real user bots
+    async fetchRealUserBots() {
+        try {
+            console.log('🚀 Starting comprehensive bot discovery...');
+            
+            const discoveryResults = await this.discoverAPI();
+            console.log('Discovery results:', discoveryResults);
+            
+            const bots = this.extractBotsFromDiscovery(discoveryResults);
+            
+            if (bots.length > 0) {
+                console.log(`✅ Found ${bots.length} real bots!`);
+                
+                // Enhance bots with additional details
+                const enhancedBots = [];
+                for (const bot of bots) {
+                    try {
+                        const enhancedBot = await this.enhanceBot(bot, discoveryResults.authType);
+                        enhancedBots.push(enhancedBot);
+                    } catch (error) {
+                        console.warn(`Could not enhance bot ${bot.id}:`, error.message);
+                        enhancedBots.push(bot);
+                    }
+                }
+                
+                return enhancedBots;
+            } else {
+                console.log('❌ No real bots found in any endpoint');
+                return [];
+            }
         } catch (error) {
-            console.error('Error fetching user account:', error);
-            throw error;
+            console.error('Error in fetchRealUserBots:', error);
+            return [];
         }
     }
 
-    // Get user's bots/meetings using a different approach
-    async getUserBots() {
+    // Enhance bot with additional details
+    async enhanceBot(bot, authType) {
         try {
-            console.log('Attempting to fetch user bots...');
-            
-            // Try different potential endpoints that might list user's bots
-            const possibleEndpoints = [
-                '/api/v1/bots',
-                '/api/v1/user/bots',
-                '/api/v1/meetings',
-                '/api/v1/user/meetings'
+            // Try to get more details about the bot
+            const detailEndpoints = [
+                `/api/v1/bots/${bot.id}`,
+                `/api/v1/bots/${bot.id}/detail`,
+                `/api/v1/bots/${bot.id}/status`,
+                `/api/v1/meetings/${bot.id}`,
+                `/api/v1/sessions/${bot.id}`
             ];
-
-            for (const endpoint of possibleEndpoints) {
+            
+            for (const endpoint of detailEndpoints) {
                 try {
                     const url = `${this.baseURL}${endpoint}`;
-                    console.log(`Trying endpoint: ${url}`);
-                    
                     const response = await fetch(url, {
                         method: 'GET',
-                        headers: this.getHeaders(),
+                        headers: this.getHeaders(authType),
                     });
-
+                    
                     if (response.ok) {
-                        const data = await this.handleResponse(response, `fetch from ${endpoint}`);
-                        console.log(`Success with endpoint ${endpoint}:`, data);
-                        
-                        // Process the response based on its structure
-                        if (Array.isArray(data)) {
-                            return data;
-                        } else if (data.bots && Array.isArray(data.bots)) {
-                            return data.bots;
-                        } else if (data.meetings && Array.isArray(data.meetings)) {
-                            return data.meetings;
-                        } else if (data.results && Array.isArray(data.results)) {
-                            return data.results;
-                        } else {
-                            console.log('Unexpected data structure:', data);
-                            return [data]; // Wrap single object in array
-                        }
+                        const details = await this.handleResponse(response, `enhance bot ${bot.id}`);
+                        console.log(`Enhanced bot ${bot.id} with details from ${endpoint}`);
+                        return { ...bot, ...details, enhancedFrom: endpoint };
                     }
                 } catch (error) {
-                    console.log(`Endpoint ${endpoint} failed:`, error.message);
+                    // Continue to next endpoint
                     continue;
                 }
             }
-
-            // If no endpoints work, try to get user account info
-            try {
-                const accountData = await this.getUserAccount();
-                console.log('User account data:', accountData);
-                
-                if (accountData.bots) {
-                    return accountData.bots;
-                } else if (accountData.meetings) {
-                    return accountData.meetings;
-                }
-            } catch (error) {
-                console.log('User account endpoint also failed:', error.message);
-            }
-
-            console.log('No working endpoints found, using demo data');
-            return [];
-        } catch (error) {
-            console.error('Error fetching user bots:', error);
-            return [];
-        }
-    }
-
-    // Get bot status (this is what we'll use to check if bots are live or completed)
-    async getBotStatus(botId) {
-        try {
-            const url = `${this.baseURL}/api/v1/bots/${botId}/status`;
-            console.log(`Fetching bot status from URL: ${url}`);
             
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: this.getHeaders(),
-            });
-
-            const data = await this.handleResponse(response, 'fetch bot status');
-            return data;
+            return bot;
         } catch (error) {
-            console.error('Error fetching bot status:', error);
-            throw error;
-        }
-    }
-
-    // Get bot details (this gives us meeting information)
-    async getBotDetails(botId) {
-        try {
-            const url = `${this.baseURL}/api/v1/bots/${botId}/detail`;
-            console.log(`Fetching bot details from URL: ${url}`);
-            
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: this.getHeaders(),
-            });
-
-            const data = await this.handleResponse(response, 'fetch bot details');
-            return data;
-        } catch (error) {
-            console.error('Error fetching bot details:', error);
-            throw error;
-        }
-    }
-
-    // Get transcript by transcript ID
-    async getTranscript(transcriptId, raw = false) {
-        try {
-            const url = `${this.baseURL}/api/v1/transcript/${transcriptId}/get_transcript${raw ? '?raw=True' : ''}`;
-            console.log(`Fetching transcript from URL: ${url}`);
-            
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: this.getHeaders(),
-            });
-
-            const data = await this.handleResponse(response, 'fetch transcript');
-            return data;
-        } catch (error) {
-            console.error('Error fetching transcript:', error);
-            throw error;
-        }
-    }
-
-    // Create a new bot (meeting)
-    async createBot(meetingConfig) {
-        try {
-            const url = `${this.baseURL}/api/v1/bots/create_bot`;
-            console.log(`Creating bot at URL: ${url}`);
-            
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify(meetingConfig)
-            });
-
-            const data = await this.handleResponse(response, 'create bot');
-            return data;
-        } catch (error) {
-            console.error('Error creating bot:', error);
-            throw error;
-        }
-    }
-
-    // Remove a bot
-    async removeBot(botId) {
-        try {
-            const url = `${this.baseURL}/api/v1/bots/${botId}/remove_bot`;
-            console.log(`Removing bot from URL: ${url}`);
-            
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: this.getHeaders(),
-            });
-
-            const data = await this.handleResponse(response, 'remove bot');
-            return data;
-        } catch (error) {
-            console.error('Error removing bot:', error);
-            throw error;
-        }
-    }
-
-    // Get audio from bot
-    async getBotAudio(botId) {
-        try {
-            const url = `${this.baseURL}/api/v1/bots/${botId}/get_audio`;
-            console.log(`Fetching bot audio from URL: ${url}`);
-            
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: this.getHeaders(),
-            });
-
-            const data = await this.handleResponse(response, 'fetch bot audio');
-            return data;
-        } catch (error) {
-            console.error('Error fetching bot audio:', error);
-            throw error;
-        }
-    }
-
-    // Get manifest from bot
-    async getBotManifest(botId) {
-        try {
-            const url = `${this.baseURL}/api/v1/bots/${botId}/get_manifest`;
-            console.log(`Fetching bot manifest from URL: ${url}`);
-            
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: this.getHeaders(),
-            });
-
-            const data = await this.handleResponse(response, 'fetch bot manifest');
-            return data;
-        } catch (error) {
-            console.error('Error fetching bot manifest:', error);
-            throw error;
-        }
-    }
-
-    // Fetch real user bots with enhanced discovery
-    async fetchRealUserBots() {
-        try {
-            console.log('Attempting to fetch real user bots with enhanced discovery...');
-            
-            // First, try to get the list of user's bots
-            const userBots = await this.getUserBots();
-            console.log('Raw user bots data:', userBots);
-            
-            if (!userBots || userBots.length === 0) {
-                console.log('No bots found from user endpoints');
-                return [];
-            }
-
-            // Process each bot to get detailed information
-            const processedBots = [];
-            for (const bot of userBots) {
-                try {
-                    const botId = bot.id || bot.bot_id || bot.uuid;
-                    if (!botId) {
-                        console.warn('Bot missing ID:', bot);
-                        continue;
-                    }
-
-                    console.log(`Processing bot: ${botId}`);
-                    
-                    // Get bot status and details
-                    let botStatus = null;
-                    let botDetails = null;
-                    
-                    try {
-                        botStatus = await this.getBotStatus(botId);
-                        console.log(`Bot ${botId} status:`, botStatus);
-                    } catch (error) {
-                        console.warn(`Could not get status for bot ${botId}:`, error.message);
-                    }
-                    
-                    try {
-                        botDetails = await this.getBotDetails(botId);
-                        console.log(`Bot ${botId} details:`, botDetails);
-                    } catch (error) {
-                        console.warn(`Could not get details for bot ${botId}:`, error.message);
-                    }
-
-                    // Combine all the information
-                    const processedBot = {
-                        id: botId,
-                        ...bot, // Original bot data
-                        status: botStatus?.status || bot.status || 'unknown',
-                        details: botDetails || {},
-                        isReal: true,
-                        // Normalize common fields
-                        bot_name: botDetails?.bot_name || bot.bot_name || bot.name || `Bot ${botId}`,
-                        created_at: botDetails?.created_at || bot.created_at || bot.start_time,
-                        transcript_id: botDetails?.transcript_id || bot.transcript_id,
-                        meeting_link: botDetails?.meeting_link || bot.meeting_link || bot.join_url,
-                        participants: botDetails?.participants || bot.participants || []
-                    };
-
-                    processedBots.push(processedBot);
-                } catch (error) {
-                    console.error('Error processing bot:', error);
-                }
-            }
-
-            console.log(`Successfully processed ${processedBots.length} real bots`);
-            return processedBots;
-        } catch (error) {
-            console.error('Error fetching real user bots:', error);
-            return [];
+            console.warn(`Could not enhance bot ${bot.id}:`, error);
+            return bot;
         }
     }
 
     // Get recent meetings (completed bots)
     async getRecentMeetings(count = 15) {
         try {
-            console.log('Fetching recent meetings (completed bots)...');
+            console.log('📥 Fetching recent meetings...');
             const userBots = await this.fetchRealUserBots();
             
             if (userBots.length === 0) {
@@ -368,12 +429,8 @@ class MeetStreamAPI {
                 return this.getMockMeetings().slice(0, count);
             }
 
-            // Filter for completed bots and sort by date
-            const completedBots = userBots
-                .filter(bot => {
-                    const status = bot.status || 'unknown';
-                    return status === 'completed' || status === 'finished' || status === 'ended';
-                })
+            // Filter and sort bots
+            const recentBots = userBots
                 .sort((a, b) => {
                     const dateA = new Date(a.created_at || a.start_time || 0);
                     const dateB = new Date(b.created_at || b.start_time || 0);
@@ -381,15 +438,8 @@ class MeetStreamAPI {
                 })
                 .slice(0, count);
 
-            console.log(`Found ${completedBots.length} completed bots`);
-            
-            // If no completed bots, show all bots
-            if (completedBots.length === 0) {
-                console.log('No completed bots found, showing all bots');
-                return userBots.slice(0, count);
-            }
-
-            return completedBots;
+            console.log(`✅ Returning ${recentBots.length} recent bots`);
+            return recentBots;
         } catch (error) {
             console.error('Error fetching recent meetings:', error);
             return this.getMockMeetings().slice(0, count);
@@ -399,7 +449,7 @@ class MeetStreamAPI {
     // Get live meetings (active bots)
     async getLiveMeetings() {
         try {
-            console.log('Fetching live meetings (active bots)...');
+            console.log('📡 Fetching live meetings...');
             const userBots = await this.fetchRealUserBots();
             
             if (userBots.length === 0) {
@@ -409,11 +459,11 @@ class MeetStreamAPI {
 
             // Filter for live/active bots
             const liveBots = userBots.filter(bot => {
-                const status = bot.status || 'unknown';
-                return status === 'active' || status === 'live' || status === 'running' || status === 'in_progress';
+                const status = (bot.status || '').toLowerCase();
+                return ['active', 'live', 'running', 'in_progress', 'ongoing'].includes(status);
             });
 
-            console.log(`Found ${liveBots.length} live bots`);
+            console.log(`✅ Found ${liveBots.length} live bots`);
             return liveBots;
         } catch (error) {
             console.error('Error fetching live meetings:', error);
@@ -424,7 +474,7 @@ class MeetStreamAPI {
     // Search meetings/bots
     async searchMeetings(query) {
         try {
-            console.log('Searching meetings for:', query);
+            console.log('🔍 Searching meetings for:', query);
             const allBots = await this.fetchRealUserBots();
             
             if (allBots.length === 0) {
@@ -440,16 +490,17 @@ class MeetStreamAPI {
             }
 
             const filteredBots = allBots.filter(bot => {
-                const title = bot.bot_name || bot.name || '';
+                const title = (bot.title || bot.bot_name || '').toLowerCase();
                 const participants = bot.participants || [];
+                const queryLower = query.toLowerCase();
                 
-                return title.toLowerCase().includes(query.toLowerCase()) ||
+                return title.includes(queryLower) ||
                        participants.some(p => 
-                           (typeof p === 'string' ? p : p.name || p.email || '').toLowerCase().includes(query.toLowerCase())
+                           (typeof p === 'string' ? p : p.name || p.email || '').toLowerCase().includes(queryLower)
                        );
             });
             
-            console.log(`Search found ${filteredBots.length} matching bots`);
+            console.log(`✅ Search found ${filteredBots.length} matching bots`);
             return { meetings: filteredBots };
         } catch (error) {
             console.error('Error searching meetings:', error);
@@ -457,44 +508,80 @@ class MeetStreamAPI {
         }
     }
 
-    // Get meeting transcript with real API integration
+    // Get transcript with enhanced discovery
     async getMeetingTranscriptWithFallback(meetingId) {
         try {
-            console.log('Fetching transcript for meeting:', meetingId);
+            console.log('📄 Fetching transcript for meeting:', meetingId);
             
-            // If this is a real bot, try to get its transcript
+            // If this is a real bot, try multiple transcript endpoints
             if (meetingId.startsWith('bot_') && !meetingId.includes('demo')) {
-                try {
-                    // First get bot details to find transcript ID
-                    const botDetails = await this.getBotDetails(meetingId);
-                    console.log('Bot details:', botDetails);
-                    
-                    if (botDetails && botDetails.transcript_id) {
-                        console.log('Found transcript ID:', botDetails.transcript_id);
-                        const transcript = await this.getTranscript(botDetails.transcript_id);
-                        console.log('Real transcript fetched:', transcript);
-                        return transcript;
-                    } else {
-                        console.warn('No transcript ID found in bot details');
+                const transcriptEndpoints = [
+                    `/api/v1/bots/${meetingId}/transcript`,
+                    `/api/v1/bots/${meetingId}/get_transcript`,
+                    `/api/v1/meetings/${meetingId}/transcript`,
+                    `/api/v1/sessions/${meetingId}/transcript`,
+                    `/api/v1/transcripts/${meetingId}`
+                ];
+                
+                for (const endpoint of transcriptEndpoints) {
+                    try {
+                        const url = `${this.baseURL}${endpoint}`;
+                        console.log(`Trying transcript endpoint: ${endpoint}`);
+                        
+                        const response = await fetch(url, {
+                            method: 'GET',
+                            headers: this.getHeaders(),
+                        });
+                        
+                        if (response.ok) {
+                            const transcript = await this.handleResponse(response, `fetch transcript from ${endpoint}`);
+                            console.log(`✅ Got transcript from ${endpoint}`);
+                            return transcript;
+                        }
+                    } catch (error) {
+                        console.log(`❌ Failed to get transcript from ${endpoint}:`, error.message);
+                        continue;
                     }
-                } catch (e) {
-                    console.warn('Could not get bot details or transcript:', e);
                 }
             }
             
-            // If this looks like a transcript ID, use it directly
+            // If this looks like a transcript ID, try direct access
             if (meetingId.startsWith('transcript_') && !meetingId.includes('demo')) {
                 const transcriptId = meetingId.replace('transcript_', '');
-                console.log('Fetching transcript directly with ID:', transcriptId);
-                return await this.getTranscript(transcriptId);
+                try {
+                    const transcript = await this.getTranscript(transcriptId);
+                    console.log('✅ Got transcript by ID');
+                    return transcript;
+                } catch (error) {
+                    console.log('❌ Failed to get transcript by ID:', error.message);
+                }
             }
             
             // Fallback to mock transcript
-            console.log('Falling back to mock transcript');
+            console.log('📋 Using mock transcript as fallback');
             return this.getMockTranscript();
         } catch (error) {
-            console.warn('Failed to fetch real transcript, falling back to mock data:', error);
+            console.warn('Failed to fetch real transcript, using mock data:', error);
             return this.getMockTranscript();
+        }
+    }
+
+    // Get transcript by ID
+    async getTranscript(transcriptId, raw = false) {
+        try {
+            const url = `${this.baseURL}/api/v1/transcript/${transcriptId}/get_transcript${raw ? '?raw=True' : ''}`;
+            console.log(`Fetching transcript from URL: ${url}`);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: this.getHeaders(),
+            });
+
+            const data = await this.handleResponse(response, 'fetch transcript');
+            return data;
+        } catch (error) {
+            console.error('Error fetching transcript:', error);
+            throw error;
         }
     }
 
@@ -540,7 +627,7 @@ class MeetStreamAPI {
         return JSON.stringify(transcriptData, null, 2);
     }
 
-    // Get mock meetings for fallback
+    // Mock data methods (unchanged)
     getMockMeetings() {
         return [
             {
@@ -576,7 +663,6 @@ class MeetStreamAPI {
         ];
     }
 
-    // Get mock live meetings
     getMockLiveMeetings() {
         return [
             {
@@ -595,7 +681,6 @@ class MeetStreamAPI {
         ];
     }
 
-    // Get mock transcript
     getMockTranscript() {
         return {
             transcript_id: 'transcript_demo_001',
@@ -668,8 +753,10 @@ class MeetStreamAPI {
     async getMeetingDetails(meetingId) {
         try {
             if (meetingId.startsWith('bot_') && !meetingId.includes('demo')) {
-                const botDetails = await this.getBotDetails(meetingId);
-                return botDetails;
+                // Try to get real bot details
+                const userBots = await this.fetchRealUserBots();
+                const bot = userBots.find(b => b.id === meetingId);
+                if (bot) return bot;
             }
             
             const mockMeetings = this.getMockMeetings();

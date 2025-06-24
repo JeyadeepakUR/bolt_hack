@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Calendar, Users, Clock, Download, Loader2, Wifi, WifiOff, Bot, Mic, AlertCircle, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import { Search, Calendar, Users, Clock, Download, Loader2, Wifi, WifiOff, Bot, Mic, AlertCircle, RefreshCw, CheckCircle, XCircle, Database, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import MeetStreamAPI from '../services/meetstreamApi';
 
@@ -13,148 +13,105 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
     const [error, setError] = useState('');
     const [activeTab, setActiveTab] = useState('recent');
     const [connectionStatus, setConnectionStatus] = useState('checking');
-    const [apiTestResults, setApiTestResults] = useState({});
+    const [discoveryResults, setDiscoveryResults] = useState(null);
+    const [isDiscovering, setIsDiscovering] = useState(false);
 
     const meetstreamAPI = new MeetStreamAPI();
 
     // Load meetings and check connection on component mount
     useEffect(() => {
-        checkConnectionAndLoadData();
+        performFullDiscovery();
     }, []);
 
-    const testApiEndpoints = async () => {
-        const endpoints = [
-            { name: 'User Account', endpoint: '/api/v1/user/account' },
-            { name: 'Bots List', endpoint: '/api/v1/bots' },
-            { name: 'User Bots', endpoint: '/api/v1/user/bots' },
-            { name: 'Meetings', endpoint: '/api/v1/meetings' },
-            { name: 'User Meetings', endpoint: '/api/v1/user/meetings' }
-        ];
-
-        const results = {};
-        
-        for (const { name, endpoint } of endpoints) {
-            try {
-                const url = `${meetstreamAPI.baseURL}${endpoint}`;
-                console.log(`Testing endpoint: ${url}`);
-                
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: meetstreamAPI.getHeaders(),
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    results[name] = { 
-                        status: 'success', 
-                        data: data,
-                        endpoint: endpoint
-                    };
-                    console.log(`✅ ${name} (${endpoint}):`, data);
-                } else {
-                    const errorText = await response.text();
-                    results[name] = { 
-                        status: 'error', 
-                        error: `${response.status}: ${errorText}`,
-                        endpoint: endpoint
-                    };
-                    console.log(`❌ ${name} (${endpoint}):`, response.status, errorText);
-                }
-            } catch (error) {
-                results[name] = { 
-                    status: 'error', 
-                    error: error.message,
-                    endpoint: endpoint
-                };
-                console.log(`❌ ${name} (${endpoint}):`, error.message);
-            }
-        }
-
-        setApiTestResults(results);
-        return results;
-    };
-
-    const checkConnectionAndLoadData = async () => {
+    const performFullDiscovery = async () => {
+        setIsDiscovering(true);
         setConnectionStatus('checking');
         setError('');
         
         try {
-            console.log('🔍 Testing API endpoints to find real data...');
-            const testResults = await testApiEndpoints();
+            console.log('🚀 Starting comprehensive API discovery...');
             
-            // Check if any endpoint returned real data
-            const successfulEndpoints = Object.entries(testResults).filter(([name, result]) => result.status === 'success');
+            // Perform comprehensive API discovery
+            const results = await meetstreamAPI.discoverAPI();
+            setDiscoveryResults(results);
             
-            if (successfulEndpoints.length > 0) {
-                console.log(`✅ Found ${successfulEndpoints.length} working endpoints`);
+            console.log('Discovery completed:', results);
+            
+            // Check if we found any working endpoints with data
+            const workingEndpoints = Object.entries(results.endpoints).filter(([endpoint, result]) => 
+                result.status === 'success' && result.data
+            );
+            
+            if (workingEndpoints.length > 0) {
+                console.log(`✅ Found ${workingEndpoints.length} working endpoints`);
                 setConnectionStatus('connected');
                 
                 // Try to load real data
-                await loadRecentMeetings();
-                await loadLiveMeetings();
+                await loadRealData();
             } else {
-                console.log('❌ No working endpoints found, using demo data');
+                console.log('❌ No working endpoints with data found');
                 setConnectionStatus('disconnected');
-                setError('Could not connect to MeetStream API. All endpoints returned errors. Using demo data.');
+                setError('Could not find any working API endpoints with data. Using demo data.');
                 
                 // Load demo data
                 setMeetings(meetstreamAPI.getMockMeetings());
                 setLiveMeetings(meetstreamAPI.getMockLiveMeetings());
             }
         } catch (error) {
-            console.error('Connection check failed:', error);
+            console.error('Discovery failed:', error);
             setConnectionStatus('disconnected');
-            setError(`Connection failed: ${error.message}`);
+            setError(`API discovery failed: ${error.message}`);
             
             // Load demo data as fallback
             setMeetings(meetstreamAPI.getMockMeetings());
             setLiveMeetings(meetstreamAPI.getMockLiveMeetings());
+        } finally {
+            setIsDiscovering(false);
         }
     };
 
-    const loadRecentMeetings = async () => {
+    const loadRealData = async () => {
         setIsLoadingMeetings(true);
         try {
-            console.log('📥 Loading recent meetings (completed bots)...');
+            console.log('📥 Loading real meeting data...');
+            
+            // Load recent meetings
             const recentMeetings = await meetstreamAPI.getRecentMeetings(15);
             console.log('Recent meetings loaded:', recentMeetings);
             
-            if (recentMeetings.length > 0 && recentMeetings[0].isReal !== false) {
+            // Load live meetings
+            const liveMeetings = await meetstreamAPI.getLiveMeetings();
+            console.log('Live meetings loaded:', liveMeetings);
+            
+            // Check if we got real data
+            const hasRealRecentData = recentMeetings.length > 0 && recentMeetings.some(m => m.isReal === true);
+            const hasRealLiveData = liveMeetings.length > 0 && liveMeetings.some(m => m.isReal === true);
+            
+            if (hasRealRecentData || hasRealLiveData) {
                 console.log('✅ Real meeting data found!');
-                setMeetings(recentMeetings);
                 setConnectionStatus('connected');
-            } else {
-                console.log('📋 Using demo data (no real meetings found)');
                 setMeetings(recentMeetings);
-                if (connectionStatus !== 'connected') {
-                    setConnectionStatus('demo');
-                }
+                setLiveMeetings(liveMeetings);
+            } else {
+                console.log('📋 No real data found, using demo data');
+                setConnectionStatus('demo');
+                setMeetings(recentMeetings);
+                setLiveMeetings(liveMeetings);
             }
         } catch (err) {
-            console.error('Error loading recent meetings:', err);
-            setError('Failed to load recent meetings. Using demo data.');
+            console.error('Error loading real data:', err);
+            setError('Failed to load meeting data. Using demo data.');
             setMeetings(meetstreamAPI.getMockMeetings());
+            setLiveMeetings(meetstreamAPI.getMockLiveMeetings());
             setConnectionStatus('disconnected');
         } finally {
             setIsLoadingMeetings(false);
         }
     };
 
-    const loadLiveMeetings = async () => {
-        try {
-            console.log('📡 Loading live meetings (active bots)...');
-            const live = await meetstreamAPI.getLiveMeetings();
-            console.log('Live meetings loaded:', live);
-            setLiveMeetings(live);
-        } catch (err) {
-            console.error('Error loading live meetings:', err);
-            setLiveMeetings(meetstreamAPI.getMockLiveMeetings());
-        }
-    };
-
     const handleSearch = async () => {
         if (!searchQuery.trim()) {
-            loadRecentMeetings();
+            loadRealData();
             return;
         }
 
@@ -182,27 +139,17 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
         try {
             console.log('📄 Loading transcript for meeting:', meeting.id);
             
-            // Check if this is a real bot or demo data
-            if (meeting.isReal === false) {
-                console.log('📋 Using demo transcript for demo meeting');
-                const mockTranscript = meetstreamAPI.getMockTranscript();
-                const formattedTranscript = meetstreamAPI.formatTranscriptText(mockTranscript);
-                onTranscriptLoaded(formattedTranscript, meeting.title || meeting.bot_name || 'Demo Meeting');
-            } else {
-                // Try to get real transcript
-                console.log('📡 Attempting to fetch real transcript...');
-                const transcriptData = await meetstreamAPI.getMeetingTranscriptWithFallback(meeting.id);
-                console.log('Transcript data received:', transcriptData);
-                
-                const formattedTranscript = meetstreamAPI.formatTranscriptText(transcriptData);
-                console.log('Formatted transcript:', formattedTranscript);
-                
-                if (!formattedTranscript.trim()) {
-                    throw new Error('No transcript content available for this meeting');
-                }
-                
-                onTranscriptLoaded(formattedTranscript, meeting.title || meeting.bot_name || 'Meeting Transcript');
+            const transcriptData = await meetstreamAPI.getMeetingTranscriptWithFallback(meeting.id);
+            console.log('Transcript data received:', transcriptData);
+            
+            const formattedTranscript = meetstreamAPI.formatTranscriptText(transcriptData);
+            console.log('Formatted transcript:', formattedTranscript);
+            
+            if (!formattedTranscript.trim()) {
+                throw new Error('No transcript content available for this meeting');
             }
+            
+            onTranscriptLoaded(formattedTranscript, meeting.title || meeting.bot_name || 'Meeting Transcript');
         } catch (err) {
             console.error('Error loading transcript:', err);
             setError(`Failed to load transcript: ${err.message}`);
@@ -235,11 +182,11 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
     };
 
     const getMeetingStatus = (meeting) => {
-        const status = meeting.status || 'unknown';
+        const status = (meeting.status || '').toLowerCase();
         
-        if (status === 'live' || status === 'active' || status === 'running' || status === 'in_progress') {
+        if (['live', 'active', 'running', 'in_progress', 'ongoing'].includes(status)) {
             return { label: 'Live', color: 'bg-red-100 text-red-700', icon: Wifi };
-        } else if (status === 'completed' || status === 'finished' || status === 'ended') {
+        } else if (['completed', 'finished', 'ended'].includes(status)) {
             return { label: 'Completed', color: 'bg-green-100 text-green-700', icon: Bot };
         } else {
             return { label: 'Unknown', color: 'bg-gray-100 text-gray-700', icon: WifiOff };
@@ -249,13 +196,13 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
     const getConnectionStatusDisplay = () => {
         switch (connectionStatus) {
             case 'checking':
-                return { color: 'text-yellow-600', icon: Loader2, label: 'Testing API endpoints...', spinning: true };
+                return { color: 'text-yellow-600', icon: Loader2, label: 'Discovering API endpoints...', spinning: true };
             case 'connected':
-                return { color: 'text-green-600', icon: CheckCircle, label: 'Connected - Real data available', spinning: false };
+                return { color: 'text-green-600', icon: CheckCircle, label: 'Connected - Real data found', spinning: false };
             case 'demo':
-                return { color: 'text-blue-600', icon: Bot, label: 'Connected - Using demo data', spinning: false };
+                return { color: 'text-blue-600', icon: Bot, label: 'Connected - No real data found', spinning: false };
             case 'disconnected':
-                return { color: 'text-red-600', icon: XCircle, label: 'API unavailable - Demo data only', spinning: false };
+                return { color: 'text-red-600', icon: XCircle, label: 'API discovery failed', spinning: false };
             default:
                 return { color: 'text-gray-600', icon: AlertCircle, label: 'Unknown status', spinning: false };
         }
@@ -278,7 +225,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                 </div>
                 <div>
                     <h2 className="text-2xl font-bold text-gray-900">Select Meeting</h2>
-                    <p className="text-gray-600">Choose a meeting from your MeetStream account</p>
+                    <p className="text-gray-600">Discovering and loading your MeetStream data</p>
                 </div>
             </div>
 
@@ -298,30 +245,49 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                             API Key: {meetstreamAPI.apiKey ? `${meetstreamAPI.apiKey.substring(0, 8)}...` : 'Not configured'}
                         </span>
                         <button
-                            onClick={checkConnectionAndLoadData}
-                            className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
-                            title="Refresh connection"
+                            onClick={performFullDiscovery}
+                            disabled={isDiscovering}
+                            className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors disabled:opacity-50"
+                            title="Rediscover API"
                         >
-                            <RefreshCw className="w-4 h-4" />
+                            <RefreshCw className={`w-4 h-4 ${isDiscovering ? 'animate-spin' : ''}`} />
                         </button>
                     </div>
                 </div>
             </div>
 
-            {/* API Test Results */}
-            {Object.keys(apiTestResults).length > 0 && (
+            {/* Discovery Progress */}
+            {isDiscovering && (
+                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div className="flex items-center">
+                        <Database className="w-4 h-4 text-yellow-600 mr-2 animate-pulse" />
+                        <span className="text-yellow-800 text-sm">
+                            Discovering API endpoints and testing authentication methods...
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {/* Discovery Results */}
+            {discoveryResults && (
                 <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">API Endpoint Test Results:</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                        {Object.entries(apiTestResults).map(([name, result]) => (
-                            <div key={name} className="flex items-center space-x-2">
+                    <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-900">API Discovery Results:</h4>
+                        <span className="text-xs text-gray-500">
+                            Auth: {discoveryResults.authType} | 
+                            Endpoints tested: {Object.keys(discoveryResults.endpoints).length}
+                        </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs max-h-32 overflow-y-auto">
+                        {Object.entries(discoveryResults.endpoints).map(([endpoint, result]) => (
+                            <div key={endpoint} className="flex items-center space-x-2">
                                 {result.status === 'success' ? (
                                     <CheckCircle className="w-3 h-3 text-green-600" />
                                 ) : (
                                     <XCircle className="w-3 h-3 text-red-600" />
                                 )}
                                 <span className={result.status === 'success' ? 'text-green-700' : 'text-red-700'}>
-                                    {name}: {result.status === 'success' ? 'Working' : 'Failed'}
+                                    {endpoint}: {result.status === 'success' ? result.dataType || 'Success' : 'Failed'}
                                 </span>
                             </div>
                         ))}
@@ -417,7 +383,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                         </p>
                         {connectionStatus === 'connected' && (
                             <p className="text-xs text-blue-600 mt-2">
-                                API is connected but no bots found. Create a bot in MeetStream to see real data.
+                                API endpoints are working but no bots found. Create a bot in MeetStream to see real data.
                             </p>
                         )}
                     </div>
@@ -457,13 +423,13 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                             )}
                                             {isReal && (
                                                 <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+                                                    <Zap className="w-3 h-3 inline mr-1" />
                                                     Real Data
                                                 </span>
                                             )}
-                                            {meeting.bot_name && (
+                                            {meeting.source && (
                                                 <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">
-                                                    <Bot className="w-3 h-3 inline mr-1" />
-                                                    {meeting.bot_name}
+                                                    {meeting.source}
                                                 </span>
                                             )}
                                         </div>
@@ -508,13 +474,6 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                                 )}
                                             </div>
                                         )}
-                                        {meeting.meeting_link && (
-                                            <div className="mt-2">
-                                                <span className="text-xs text-gray-500">
-                                                    Meeting Link: {meeting.meeting_link.substring(0, 50)}...
-                                                </span>
-                                            </div>
-                                        )}
                                     </div>
                                     {isLoading && selectedMeeting?.id === meeting.id && (
                                         <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
@@ -549,22 +508,27 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                 </motion.div>
             )}
 
-            {/* Refresh button */}
-            <div className="mt-6 flex justify-center">
+            {/* Action buttons */}
+            <div className="mt-6 flex justify-center space-x-4">
                 <motion.button
-                    onClick={() => {
-                        if (activeTab === 'live') {
-                            loadLiveMeetings();
-                        } else {
-                            loadRecentMeetings();
-                        }
-                    }}
-                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                    onClick={loadRealData}
+                    disabled={isLoadingMeetings}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                 >
-                    <RefreshCw className="w-4 h-4 inline mr-2" />
-                    Refresh {activeTab === 'live' ? 'Live Bots' : 'Recent Bots'}
+                    <RefreshCw className={`w-4 h-4 inline mr-2 ${isLoadingMeetings ? 'animate-spin' : ''}`} />
+                    Refresh Data
+                </motion.button>
+                <motion.button
+                    onClick={performFullDiscovery}
+                    disabled={isDiscovering}
+                    className="px-4 py-2 text-sm text-blue-600 hover:text-blue-900 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                >
+                    <Database className={`w-4 h-4 inline mr-2 ${isDiscovering ? 'animate-spin' : ''}`} />
+                    Rediscover API
                 </motion.button>
             </div>
         </motion.div>
