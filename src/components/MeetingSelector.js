@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Calendar, Users, Clock, Download, Loader2, Wifi, WifiOff, Bot, Mic } from 'lucide-react';
+import { Search, Calendar, Users, Clock, Download, Loader2, Wifi, WifiOff, Bot, Mic, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import MeetStreamAPI from '../services/meetstreamApi';
 
@@ -11,22 +11,34 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
     const [isLoadingMeetings, setIsLoadingMeetings] = useState(false);
     const [selectedMeeting, setSelectedMeeting] = useState(null);
     const [error, setError] = useState('');
-    const [showRecent, setShowRecent] = useState(true);
     const [activeTab, setActiveTab] = useState('recent');
+    const [connectionStatus, setConnectionStatus] = useState('checking');
 
     const meetstreamAPI = new MeetStreamAPI();
 
-    // Load recent meetings and live meetings on component mount
+    // Load meetings and check connection on component mount
     useEffect(() => {
-        loadRecentMeetings();
-        loadLiveMeetings();
+        checkConnectionAndLoadData();
     }, []);
+
+    const checkConnectionAndLoadData = async () => {
+        setConnectionStatus('checking');
+        try {
+            // Try to make a simple API call to check connection
+            await loadRecentMeetings();
+            await loadLiveMeetings();
+            setConnectionStatus('connected');
+        } catch (error) {
+            console.error('Connection check failed:', error);
+            setConnectionStatus('disconnected');
+        }
+    };
 
     const loadRecentMeetings = async () => {
         setIsLoadingMeetings(true);
         setError('');
         try {
-            console.log('Loading recent meetings...');
+            console.log('Loading recent meetings (completed bots)...');
             const recentMeetings = await meetstreamAPI.getRecentMeetings(15);
             console.log('Recent meetings loaded:', recentMeetings);
             setMeetings(recentMeetings);
@@ -42,7 +54,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
 
     const loadLiveMeetings = async () => {
         try {
-            console.log('Loading live meetings...');
+            console.log('Loading live meetings (active bots)...');
             const live = await meetstreamAPI.getLiveMeetings();
             console.log('Live meetings loaded:', live);
             setLiveMeetings(live);
@@ -65,7 +77,6 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
             const searchResults = await meetstreamAPI.searchMeetings(searchQuery);
             console.log('Search results:', searchResults);
             setMeetings(searchResults.meetings || []);
-            setShowRecent(false);
         } catch (err) {
             console.error('Error searching meetings:', err);
             setError('Failed to search meetings. Please try again.');
@@ -83,18 +94,27 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
         try {
             console.log('Loading transcript for meeting:', meeting.id);
             
-            // Use the fallback method that handles both real API and mock data
-            const transcriptData = await meetstreamAPI.getMeetingTranscriptWithFallback(meeting.id);
-            console.log('Transcript data received:', transcriptData);
-            
-            const formattedTranscript = meetstreamAPI.formatTranscriptText(transcriptData);
-            console.log('Formatted transcript:', formattedTranscript);
-            
-            if (!formattedTranscript.trim()) {
-                throw new Error('No transcript content available for this meeting');
+            // Check if this is a real bot or demo data
+            if (meeting.isReal === false) {
+                console.log('Using demo transcript for demo meeting');
+                const mockTranscript = meetstreamAPI.getMockTranscript();
+                const formattedTranscript = meetstreamAPI.formatTranscriptText(mockTranscript);
+                onTranscriptLoaded(formattedTranscript, meeting.title || meeting.bot_name || 'Demo Meeting');
+            } else {
+                // Try to get real transcript
+                console.log('Attempting to fetch real transcript...');
+                const transcriptData = await meetstreamAPI.getMeetingTranscriptWithFallback(meeting.id);
+                console.log('Transcript data received:', transcriptData);
+                
+                const formattedTranscript = meetstreamAPI.formatTranscriptText(transcriptData);
+                console.log('Formatted transcript:', formattedTranscript);
+                
+                if (!formattedTranscript.trim()) {
+                    throw new Error('No transcript content available for this meeting');
+                }
+                
+                onTranscriptLoaded(formattedTranscript, meeting.title || meeting.bot_name || 'Meeting Transcript');
             }
-            
-            onTranscriptLoaded(formattedTranscript, meeting.title || 'Meeting Transcript');
         } catch (err) {
             console.error('Error loading transcript:', err);
             setError(`Failed to load transcript: ${err.message}`);
@@ -127,16 +147,33 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
     };
 
     const getMeetingStatus = (meeting) => {
-        if (meeting.status === 'live' || meeting.status === 'active') {
+        const status = meeting.status || 'unknown';
+        
+        if (status === 'live' || status === 'active') {
             return { label: 'Live', color: 'bg-red-100 text-red-700', icon: Wifi };
-        } else if (meeting.status === 'completed') {
+        } else if (status === 'completed' || status === 'finished') {
             return { label: 'Completed', color: 'bg-green-100 text-green-700', icon: Bot };
         } else {
             return { label: 'Unknown', color: 'bg-gray-100 text-gray-700', icon: WifiOff };
         }
     };
 
+    const getConnectionStatusDisplay = () => {
+        switch (connectionStatus) {
+            case 'checking':
+                return { color: 'text-yellow-600', icon: Loader2, label: 'Checking connection...', spinning: true };
+            case 'connected':
+                return { color: 'text-green-600', icon: Wifi, label: 'Connected to MeetStream API', spinning: false };
+            case 'disconnected':
+                return { color: 'text-red-600', icon: WifiOff, label: 'Using demo data (API unavailable)', spinning: false };
+            default:
+                return { color: 'text-gray-600', icon: AlertCircle, label: 'Unknown status', spinning: false };
+        }
+    };
+
     const currentMeetings = activeTab === 'live' ? liveMeetings : meetings;
+    const connectionDisplay = getConnectionStatusDisplay();
+    const ConnectionIcon = connectionDisplay.icon;
 
     return (
         <motion.div
@@ -155,13 +192,29 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                 </div>
             </div>
 
-            {/* API Key Info */}
+            {/* Connection Status */}
             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-center">
-                    <Bot className="w-4 h-4 text-blue-600 mr-2" />
-                    <span className="text-blue-800 text-sm">
-                        Connected with API key: {meetstreamAPI.apiKey ? `${meetstreamAPI.apiKey.substring(0, 8)}...` : 'Not configured'}
-                    </span>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                        <ConnectionIcon 
+                            className={`w-4 h-4 mr-2 ${connectionDisplay.color} ${connectionDisplay.spinning ? 'animate-spin' : ''}`} 
+                        />
+                        <span className={`text-sm ${connectionDisplay.color}`}>
+                            {connectionDisplay.label}
+                        </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <span className="text-blue-800 text-sm">
+                            API Key: {meetstreamAPI.apiKey ? `${meetstreamAPI.apiKey.substring(0, 8)}...` : 'Not configured'}
+                        </span>
+                        <button
+                            onClick={checkConnectionAndLoadData}
+                            className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                            title="Refresh connection"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -225,7 +278,10 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                 >
-                    {error}
+                    <div className="flex items-center">
+                        <AlertCircle className="w-5 h-5 mr-2" />
+                        {error}
+                    </div>
                 </motion.div>
             )}
 
@@ -238,17 +294,22 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                     </div>
                 ) : currentMeetings.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
-                        {activeTab === 'live' 
-                            ? 'No live bots found' 
-                            : showRecent 
-                                ? 'No recent bots found' 
-                                : 'No bots match your search'
-                        }
+                        <Bot className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                        <p className="text-lg font-medium mb-2">
+                            {activeTab === 'live' ? 'No live bots found' : 'No recent bots found'}
+                        </p>
+                        <p className="text-sm">
+                            {activeTab === 'live' 
+                                ? 'Start a meeting with a MeetStream bot to see it here' 
+                                : 'Your completed meeting bots will appear here'
+                            }
+                        </p>
                     </div>
                 ) : (
                     currentMeetings.map((meeting) => {
                         const status = getMeetingStatus(meeting);
                         const StatusIcon = status.icon;
+                        const isDemo = meeting.isReal === false;
                         
                         return (
                             <motion.div
@@ -257,7 +318,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                     selectedMeeting?.id === meeting.id
                                         ? 'border-blue-500 bg-blue-50'
                                         : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                                }`}
+                                } ${isDemo ? 'border-l-4 border-l-orange-400' : ''}`}
                                 onClick={() => handleMeetingSelect(meeting)}
                                 whileHover={{ scale: 1.01 }}
                                 whileTap={{ scale: 0.99 }}
@@ -266,12 +327,17 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                     <div className="flex-1">
                                         <div className="flex items-center gap-3 mb-2">
                                             <h4 className="font-semibold text-gray-900">
-                                                {meeting.title || 'Untitled Meeting'}
+                                                {meeting.title || meeting.bot_name || 'Untitled Meeting'}
                                             </h4>
                                             <span className={`px-2 py-1 text-xs font-medium rounded-full ${status.color}`}>
                                                 <StatusIcon className="w-3 h-3 inline mr-1" />
                                                 {status.label}
                                             </span>
+                                            {isDemo && (
+                                                <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded-full">
+                                                    Demo Data
+                                                </span>
+                                            )}
                                             {meeting.bot_name && (
                                                 <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">
                                                     <Bot className="w-3 h-3 inline mr-1" />
@@ -293,7 +359,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                             {meeting.participants && (
                                                 <div className="flex items-center">
                                                     <Users className="w-4 h-4 mr-1" />
-                                                    {meeting.participants.length} participants
+                                                    {Array.isArray(meeting.participants) ? meeting.participants.length : 0} participants
                                                 </div>
                                             )}
                                             {meeting.transcript_id && (
@@ -303,14 +369,14 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                                 </div>
                                             )}
                                         </div>
-                                        {meeting.participants && meeting.participants.length > 0 && (
+                                        {meeting.participants && Array.isArray(meeting.participants) && meeting.participants.length > 0 && (
                                             <div className="mt-2 flex flex-wrap gap-1">
                                                 {meeting.participants.slice(0, 3).map((participant, idx) => (
                                                     <span
                                                         key={idx}
                                                         className="inline-flex items-center px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full"
                                                     >
-                                                        {participant.name || participant.email || participant}
+                                                        {typeof participant === 'string' ? participant : participant.name || participant.email || 'Unknown'}
                                                     </span>
                                                 ))}
                                                 {meeting.participants.length > 3 && (
@@ -349,10 +415,11 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                         <Download className="w-5 h-5 text-green-600 mr-3" />
                         <div>
                             <span className="text-green-800 font-medium">
-                                Transcript loaded from: {selectedMeeting.title || 'Untitled Meeting'}
+                                Transcript loaded from: {selectedMeeting.title || selectedMeeting.bot_name || 'Untitled Meeting'}
                             </span>
                             <p className="text-green-700 text-sm">
                                 Ready to extract ideas from this meeting
+                                {selectedMeeting.isReal === false && ' (using demo transcript)'}
                             </p>
                         </div>
                     </div>
@@ -373,6 +440,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                 >
+                    <RefreshCw className="w-4 h-4 inline mr-2" />
                     Refresh {activeTab === 'live' ? 'Live Bots' : 'Recent Bots'}
                 </motion.button>
             </div>

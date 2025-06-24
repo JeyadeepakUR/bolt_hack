@@ -34,6 +34,8 @@ class MeetStreamAPI {
                 const errorData = JSON.parse(errorText);
                 if (errorData.message) {
                     errorMessage = `${operation} API Error: ${errorData.message}`;
+                } else if (errorData.detail) {
+                    errorMessage = `${operation} API Error: ${errorData.detail}`;
                 }
             } catch (e) {
                 // If error response is not JSON, use the text
@@ -52,10 +54,32 @@ class MeetStreamAPI {
             throw new Error(errorMessage);
         }
         
-        return response.json();
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            return response.text();
+        }
     }
 
-    // Get bot status (this is what we'll use to list "meetings" - active bots)
+    // Get all user bots (this represents the user's meeting history)
+    async getUserBots() {
+        try {
+            // Since there's no direct endpoint to list all user bots in the Postman collection,
+            // we'll need to implement a workaround or use a different approach
+            console.log('Attempting to fetch user bots...');
+            
+            // Try to get user information first (if such endpoint exists)
+            // For now, we'll return mock data but with real API structure
+            console.warn('No direct endpoint to list all user bots. Using mock data structure.');
+            return this.getMockBotsWithRealStructure();
+        } catch (error) {
+            console.error('Error fetching user bots:', error);
+            return this.getMockBotsWithRealStructure();
+        }
+    }
+
+    // Get bot status (this is what we'll use to check if bots are live or completed)
     async getBotStatus(botId) {
         try {
             const url = `${this.baseURL}/api/v1/bots/${botId}/status`;
@@ -189,124 +213,168 @@ class MeetStreamAPI {
         }
     }
 
-    // Get user's bots (this represents their meetings/sessions)
-    async getUserBots() {
+    // Fetch real user bots with status checking (similar to Rebirth project approach)
+    async fetchRealUserBots() {
         try {
+            console.log('Attempting to fetch real user bots...');
+            
             // Since there's no direct endpoint to list all user bots,
-            // we'll return mock data that represents the user's meeting history
-            console.log('Returning mock bot data (no direct endpoint to list user bots)');
-            return this.getMockMeetings();
+            // we would need to implement a different approach:
+            // 1. Store bot IDs locally when they're created
+            // 2. Use a backend service to track user's bots
+            // 3. Use webhook callbacks to maintain bot list
+            
+            // For now, let's try to get some sample bot IDs and check their status
+            const sampleBotIds = this.getSampleBotIds();
+            const realBots = [];
+            
+            for (const botId of sampleBotIds) {
+                try {
+                    const botStatus = await this.getBotStatus(botId);
+                    const botDetails = await this.getBotDetails(botId);
+                    
+                    realBots.push({
+                        id: botId,
+                        status: botStatus,
+                        details: botDetails,
+                        isReal: true
+                    });
+                } catch (error) {
+                    console.warn(`Could not fetch data for bot ${botId}:`, error.message);
+                }
+            }
+            
+            if (realBots.length > 0) {
+                console.log(`Found ${realBots.length} real bots`);
+                return realBots;
+            } else {
+                console.log('No real bots found, using mock data');
+                return this.getMockBotsWithRealStructure();
+            }
         } catch (error) {
-            console.error('Error fetching user bots:', error);
-            return this.getMockMeetings();
+            console.error('Error fetching real user bots:', error);
+            return this.getMockBotsWithRealStructure();
         }
+    }
+
+    // Get sample bot IDs (in a real implementation, these would come from your backend or local storage)
+    getSampleBotIds() {
+        // These would be actual bot IDs from your MeetStream account
+        // You would get these from:
+        // 1. Local storage after creating bots
+        // 2. Your backend database
+        // 3. Webhook callbacks when bots are created
+        return [
+            // Add your actual bot IDs here when you have them
+            // 'bot_12345',
+            // 'bot_67890',
+        ];
     }
 
     // Legacy methods for compatibility with existing UI
     async getLiveMeetings() {
         try {
-            // Since the actual API doesn't have a direct "live meetings" endpoint,
-            // we'll return mock data that represents active bots
-            console.log('Returning mock live meetings data (API uses bot-based structure)');
-            return this.getMockLiveMeetings();
+            console.log('Fetching live meetings (active bots)...');
+            const userBots = await this.fetchRealUserBots();
+            
+            // Filter for live/active bots
+            const liveBots = userBots.filter(bot => {
+                if (bot.isReal && bot.status) {
+                    return bot.status.status === 'active' || bot.status.status === 'live';
+                }
+                return bot.status === 'live' || bot.status === 'active';
+            });
+            
+            return liveBots.length > 0 ? liveBots : this.getMockLiveMeetings();
         } catch (error) {
             console.error('Error fetching live meetings:', error);
             return this.getMockLiveMeetings();
         }
     }
 
-    // Legacy method - return mock data since API structure is different
-    async listMeetings(limit = 10, offset = 0) {
+    // Get recent meetings (completed bots)
+    async getRecentMeetings(count = 15) {
         try {
-            console.log('Returning mock meetings data (API uses bot-based structure)');
-            return { meetings: this.getMockMeetings() };
+            console.log('Fetching recent meetings (completed bots)...');
+            const userBots = await this.fetchRealUserBots();
+            
+            // Filter for completed bots and sort by date
+            const completedBots = userBots
+                .filter(bot => {
+                    if (bot.isReal && bot.status) {
+                        return bot.status.status === 'completed' || bot.status.status === 'finished';
+                    }
+                    return bot.status === 'completed';
+                })
+                .sort((a, b) => {
+                    const dateA = new Date(a.details?.created_at || a.start_time || 0);
+                    const dateB = new Date(b.details?.created_at || b.start_time || 0);
+                    return dateB - dateA; // Most recent first
+                })
+                .slice(0, count);
+            
+            return completedBots.length > 0 ? completedBots : this.getMockMeetings().slice(0, count);
         } catch (error) {
-            console.error('Error fetching meetings list:', error);
-            return { meetings: this.getMockMeetings() };
+            console.error('Error fetching recent meetings:', error);
+            return this.getMockMeetings().slice(0, count);
         }
     }
 
-    // Legacy method - return mock data
+    // Search meetings/bots
     async searchMeetings(query) {
         try {
-            console.log('Returning mock search results (API uses bot-based structure)');
-            const mockMeetings = this.getMockMeetings();
-            const filteredMeetings = mockMeetings.filter(meeting => 
-                meeting.title.toLowerCase().includes(query.toLowerCase()) ||
-                meeting.participants.some(p => 
-                    (typeof p === 'string' ? p : p.name || p.email || '').toLowerCase().includes(query.toLowerCase())
-                )
-            );
-            return { meetings: filteredMeetings };
+            console.log('Searching meetings for:', query);
+            const allBots = await this.fetchRealUserBots();
+            
+            const filteredBots = allBots.filter(bot => {
+                const title = bot.details?.bot_name || bot.title || '';
+                const participants = bot.details?.participants || bot.participants || [];
+                
+                return title.toLowerCase().includes(query.toLowerCase()) ||
+                       participants.some(p => 
+                           (typeof p === 'string' ? p : p.name || p.email || '').toLowerCase().includes(query.toLowerCase())
+                       );
+            });
+            
+            return { meetings: filteredBots };
         } catch (error) {
             console.error('Error searching meetings:', error);
-            return { meetings: [] };
+            return { meetings: this.getMockMeetings() };
         }
     }
 
-    // Legacy method for compatibility
-    async getMeetingDetails(meetingId) {
-        try {
-            // If this is a bot ID, try to get bot details
-            if (meetingId.startsWith('bot_')) {
-                return await this.getBotDetails(meetingId);
-            }
-            
-            // Otherwise return mock data
-            const mockMeetings = this.getMockMeetings();
-            return mockMeetings.find(m => m.id === meetingId) || mockMeetings[0];
-        } catch (error) {
-            console.error('Error fetching meeting details:', error);
-            const mockMeetings = this.getMockMeetings();
-            return mockMeetings[0];
-        }
-    }
-
-    // Legacy method for compatibility
-    async getMeetingTranscript(meetingId) {
-        try {
-            // If this looks like a transcript ID, use the transcript endpoint
-            if (meetingId.startsWith('transcript_')) {
-                return await this.getTranscript(meetingId.replace('transcript_', ''));
-            }
-            
-            // If this is a bot ID, try to get its transcript
-            if (meetingId.startsWith('bot_')) {
-                // For now, return mock transcript since we need the transcript ID
-                return this.getMockTranscript();
-            }
-            
-            // Otherwise return mock transcript
-            return this.getMockTranscript();
-        } catch (error) {
-            console.error('Error fetching meeting transcript:', error);
-            return this.getMockTranscript();
-        }
-    }
-
-    // Updated method with fallback
+    // Get meeting transcript with real API integration
     async getMeetingTranscriptWithFallback(meetingId) {
         try {
-            // Try to get real transcript if it's a transcript ID
-            if (meetingId.startsWith('transcript_')) {
-                const transcript = await this.getTranscript(meetingId.replace('transcript_', ''));
-                return transcript;
-            }
+            console.log('Fetching transcript for meeting:', meetingId);
             
-            // If it's a bot ID, try to get the transcript
+            // If this is a real bot, try to get its transcript
             if (meetingId.startsWith('bot_')) {
-                // First get bot details to find transcript ID
                 try {
+                    // First get bot details to find transcript ID
                     const botDetails = await this.getBotDetails(meetingId);
+                    console.log('Bot details:', botDetails);
+                    
                     if (botDetails && botDetails.transcript_id) {
-                        return await this.getTranscript(botDetails.transcript_id);
+                        console.log('Found transcript ID:', botDetails.transcript_id);
+                        const transcript = await this.getTranscript(botDetails.transcript_id);
+                        return transcript;
+                    } else {
+                        console.warn('No transcript ID found in bot details');
                     }
                 } catch (e) {
                     console.warn('Could not get bot details or transcript:', e);
                 }
             }
             
-            // Otherwise return mock transcript
+            // If this looks like a transcript ID, use it directly
+            if (meetingId.startsWith('transcript_')) {
+                const transcriptId = meetingId.replace('transcript_', '');
+                return await this.getTranscript(transcriptId);
+            }
+            
+            // Fallback to mock transcript
+            console.log('Falling back to mock transcript');
             return this.getMockTranscript();
         } catch (error) {
             console.warn('Failed to fetch real transcript, falling back to mock data:', error);
@@ -314,116 +382,141 @@ class MeetStreamAPI {
         }
     }
 
+    // Format transcript text from API response
+    formatTranscriptText(transcriptData) {
+        if (!transcriptData) {
+            return '';
+        }
+
+        // Handle different transcript formats
+        if (typeof transcriptData === 'string') {
+            return transcriptData;
+        }
+
+        if (transcriptData.segments && Array.isArray(transcriptData.segments)) {
+            return transcriptData.segments
+                .map(segment => {
+                    const speaker = segment.speaker || 'Unknown';
+                    const text = segment.text || '';
+                    return `"${text}"`;
+                })
+                .join('\n\n');
+        }
+
+        if (transcriptData.transcript) {
+            return transcriptData.transcript;
+        }
+
+        if (transcriptData.text) {
+            return transcriptData.text;
+        }
+
+        // If it's an object with unknown structure, try to extract text
+        if (typeof transcriptData === 'object') {
+            const possibleTextFields = ['content', 'body', 'message', 'data'];
+            for (const field of possibleTextFields) {
+                if (transcriptData[field]) {
+                    return transcriptData[field];
+                }
+            }
+        }
+
+        return JSON.stringify(transcriptData, null, 2);
+    }
+
+    // Get mock bots with real API structure
+    getMockBotsWithRealStructure() {
+        return [
+            {
+                id: 'bot_demo_001',
+                bot_name: 'Weekly Team Standup Bot',
+                status: 'completed',
+                created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+                meeting_link: 'https://zoom.us/j/123456789',
+                transcript_id: 'transcript_demo_001',
+                details: {
+                    bot_name: 'Weekly Team Standup Bot',
+                    participants: ['alice@company.com', 'bob@company.com', 'carol@company.com'],
+                    duration: 1800,
+                    audio_required: true,
+                    video_required: false
+                },
+                isReal: false
+            },
+            {
+                id: 'bot_demo_002',
+                bot_name: 'Product Strategy Review Bot',
+                status: 'completed',
+                created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+                meeting_link: 'https://meet.google.com/abc-defg-hij',
+                transcript_id: 'transcript_demo_002',
+                details: {
+                    bot_name: 'Product Strategy Review Bot',
+                    participants: ['david@company.com', 'emma@company.com', 'frank@company.com'],
+                    duration: 3600,
+                    audio_required: true,
+                    video_required: true
+                },
+                isReal: false
+            },
+            {
+                id: 'bot_demo_003',
+                bot_name: 'Client Presentation Bot',
+                status: 'completed',
+                created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+                meeting_link: 'https://teams.microsoft.com/l/meetup-join/xyz',
+                transcript_id: 'transcript_demo_003',
+                details: {
+                    bot_name: 'Client Presentation Bot',
+                    participants: ['grace@company.com', 'henry@client.com', 'ivy@client.com'],
+                    duration: 2700,
+                    audio_required: true,
+                    video_required: false
+                },
+                isReal: false
+            }
+        ];
+    }
+
     // Get mock live meetings (representing active bots)
     getMockLiveMeetings() {
         return [
             {
                 id: 'bot_live_001',
-                title: 'Daily Standup - Live',
-                start_time: new Date().toISOString(),
+                bot_name: 'Daily Standup Bot - Live',
                 status: 'live',
-                participants: [
-                    { name: 'Alice Johnson', email: 'alice@company.com' },
-                    { name: 'Bob Smith', email: 'bob@company.com' }
-                ],
-                bot_name: 'standup-bot',
-                meeting_link: 'https://zoom.us/j/123456789'
-            },
-            {
-                id: 'bot_live_002',
-                title: 'Client Call - In Progress',
-                start_time: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // 30 minutes ago
-                status: 'live',
-                participants: [
-                    { name: 'Carol Davis', email: 'carol@company.com' },
-                    { name: 'David Wilson', email: 'david@client.com' }
-                ],
-                bot_name: 'client-bot',
-                meeting_link: 'https://meet.google.com/abc-defg-hij'
+                created_at: new Date().toISOString(),
+                meeting_link: 'https://zoom.us/j/987654321',
+                details: {
+                    bot_name: 'Daily Standup Bot - Live',
+                    participants: ['alice@company.com', 'bob@company.com'],
+                    audio_required: true,
+                    video_required: false
+                },
+                isReal: false
             }
         ];
     }
 
-    // Get mock meetings for testing/fallback
+    // Legacy methods for backward compatibility
     getMockMeetings() {
-        return [
-            {
-                id: 'bot_001',
-                title: 'Weekly Team Standup',
-                start_time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
-                duration: 1800, // 30 minutes in seconds
-                participants: [
-                    { name: 'Alice Johnson', email: 'alice@company.com' },
-                    { name: 'Bob Smith', email: 'bob@company.com' },
-                    { name: 'Carol Davis', email: 'carol@company.com' }
-                ],
-                status: 'completed',
-                bot_name: 'weekly-standup-bot',
-                transcript_id: 'transcript_001'
-            },
-            {
-                id: 'bot_002',
-                title: 'Product Strategy Review',
-                start_time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-                duration: 3600, // 60 minutes in seconds
-                participants: [
-                    { name: 'David Wilson', email: 'david@company.com' },
-                    { name: 'Emma Brown', email: 'emma@company.com' },
-                    { name: 'Frank Miller', email: 'frank@company.com' }
-                ],
-                status: 'completed',
-                bot_name: 'strategy-bot',
-                transcript_id: 'transcript_002'
-            },
-            {
-                id: 'bot_003',
-                title: 'Client Presentation',
-                start_time: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago
-                duration: 2700, // 45 minutes in seconds
-                participants: [
-                    { name: 'Grace Lee', email: 'grace@company.com' },
-                    { name: 'Henry Taylor', email: 'henry@client.com' },
-                    { name: 'Ivy Chen', email: 'ivy@client.com' }
-                ],
-                status: 'completed',
-                bot_name: 'presentation-bot',
-                transcript_id: 'transcript_003'
-            },
-            {
-                id: 'bot_004',
-                title: 'Engineering Sync',
-                start_time: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 1 week ago
-                duration: 1800, // 30 minutes in seconds
-                participants: [
-                    { name: 'Jack Anderson', email: 'jack@company.com' },
-                    { name: 'Kate Roberts', email: 'kate@company.com' },
-                    { name: 'Liam Thompson', email: 'liam@company.com' }
-                ],
-                status: 'completed',
-                bot_name: 'eng-sync-bot',
-                transcript_id: 'transcript_004'
-            },
-            {
-                id: 'bot_005',
-                title: 'Quarterly Planning',
-                start_time: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(), // 10 days ago
-                duration: 5400, // 90 minutes in seconds
-                participants: [
-                    { name: 'Maya Patel', email: 'maya@company.com' },
-                    { name: 'Noah Garcia', email: 'noah@company.com' },
-                    { name: 'Olivia Martinez', email: 'olivia@company.com' }
-                ],
-                status: 'completed',
-                bot_name: 'planning-bot',
-                transcript_id: 'transcript_005'
-            }
-        ];
+        return this.getMockBotsWithRealStructure().map(bot => ({
+            id: bot.id,
+            title: bot.bot_name || bot.details?.bot_name || 'Untitled Meeting',
+            start_time: bot.created_at,
+            duration: bot.details?.duration || 1800,
+            participants: bot.details?.participants || [],
+            status: bot.status,
+            bot_name: bot.bot_name,
+            transcript_id: bot.transcript_id,
+            meeting_link: bot.meeting_link
+        }));
     }
 
     // Get mock transcript with realistic meeting content
     getMockTranscript() {
         return {
-            transcript_id: 'transcript_001',
+            transcript_id: 'transcript_demo_001',
             segments: [
                 {
                     speaker: 'Alice Johnson',
@@ -479,30 +572,37 @@ class MeetStreamAPI {
         };
     }
 
-    // Format transcript text from API response
-    formatTranscriptText(transcriptData) {
-        if (!transcriptData || !transcriptData.segments) {
-            return '';
+    // List meetings (legacy compatibility)
+    async listMeetings(limit = 10, offset = 0) {
+        try {
+            const meetings = await this.getRecentMeetings(limit);
+            return { meetings };
+        } catch (error) {
+            console.error('Error listing meetings:', error);
+            return { meetings: this.getMockMeetings() };
         }
-
-        return transcriptData.segments
-            .map(segment => {
-                const speaker = segment.speaker || 'Unknown';
-                const text = segment.text || '';
-                return `"${text}"`;
-            })
-            .join('\n\n');
     }
 
-    // Get recent meetings for quick access
-    async getRecentMeetings(count = 5) {
+    // Get meeting details (legacy compatibility)
+    async getMeetingDetails(meetingId) {
         try {
-            const meetings = await this.listMeetings(count, 0);
-            return meetings.meetings || [];
+            if (meetingId.startsWith('bot_')) {
+                const botDetails = await this.getBotDetails(meetingId);
+                return botDetails;
+            }
+            
+            const mockMeetings = this.getMockMeetings();
+            return mockMeetings.find(m => m.id === meetingId) || mockMeetings[0];
         } catch (error) {
-            console.error('Error fetching recent meetings:', error);
-            return this.getMockMeetings().slice(0, count);
+            console.error('Error fetching meeting details:', error);
+            const mockMeetings = this.getMockMeetings();
+            return mockMeetings[0];
         }
+    }
+
+    // Get meeting transcript (legacy compatibility)
+    async getMeetingTranscript(meetingId) {
+        return this.getMeetingTranscriptWithFallback(meetingId);
     }
 }
 

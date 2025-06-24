@@ -1,10 +1,9 @@
 // API Configuration
 export const API_CONFIG = {
     MEETSTREAM: {
-        // Use the provided API key
+        // Your actual API key
         API_KEY: 'ms_H3XjWL4qeh0X9GqshgbZT9ku3MnBnI04',
         BASE_URL: 'https://api.meetstream.ai',
-        BASE_URL_DEV: 'https://api.meetstream.ai', // Use direct URL to avoid CORS issues
         ENDPOINTS: {
             BOTS: '/api/v1/bots',
             TRANSCRIPT: '/api/v1/transcript',
