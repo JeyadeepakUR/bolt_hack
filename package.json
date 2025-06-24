@@ -2,6 +2,7 @@
     "name": "dewdrop-ai",
     "version": "1.0.0",
     "private": true,
+    "proxy": "https://api.meetstream.ai",
     "dependencies": {
         "@types/three": "^0.158.0",
         "react": "^18.2.0",
