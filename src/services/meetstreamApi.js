@@ -153,6 +153,52 @@ class MeetStreamAPI {
         }
     }
 
+    // Get mock meetings for testing/fallback
+    getMockMeetings() {
+        return [
+            {
+                id: 'mock-meeting-1',
+                title: 'Weekly Team Standup',
+                start_time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
+                duration: 30,
+                participants: ['Alice Johnson', 'Bob Smith', 'Carol Davis'],
+                status: 'completed'
+            },
+            {
+                id: 'mock-meeting-2',
+                title: 'Product Strategy Review',
+                start_time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
+                duration: 60,
+                participants: ['David Wilson', 'Emma Brown', 'Frank Miller'],
+                status: 'completed'
+            },
+            {
+                id: 'mock-meeting-3',
+                title: 'Client Presentation',
+                start_time: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago
+                duration: 45,
+                participants: ['Grace Lee', 'Henry Taylor', 'Ivy Chen'],
+                status: 'completed'
+            },
+            {
+                id: 'mock-meeting-4',
+                title: 'Engineering Sync',
+                start_time: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 1 week ago
+                duration: 30,
+                participants: ['Jack Anderson', 'Kate Roberts', 'Liam Thompson'],
+                status: 'completed'
+            },
+            {
+                id: 'mock-meeting-5',
+                title: 'Quarterly Planning',
+                start_time: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(), // 10 days ago
+                duration: 90,
+                participants: ['Maya Patel', 'Noah Garcia', 'Olivia Martinez'],
+                status: 'completed'
+            }
+        ];
+    }
+
     // Format transcript text from API response
     formatTranscriptText(transcriptData) {
         if (!transcriptData || !transcriptData.segments) {

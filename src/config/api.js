@@ -3,7 +3,7 @@ export const API_CONFIG = {
     MEETSTREAM: {
         // Use the working API key from the documentation
         API_KEY: 'ms_QwsHGaTmjVEvUiiwdNWzdI03LifdoN63',
-        BASE_URL: 'https://api.meetstream.ai/v1',
+        BASE_URL: '/v1',
         ENDPOINTS: {
             MEETINGS: '/meetings',
             LIVE_MEETINGS: '/meetings/live',
