@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Calendar, Users, Clock, Download, Loader2, Wifi, WifiOff } from 'lucide-react';
+import { Search, Calendar, Users, Clock, Download, Loader2, Wifi, WifiOff, Bot, Mic } from 'lucide-react';
 import { motion } from 'framer-motion';
 import MeetStreamAPI from '../services/meetstreamApi';
 
@@ -130,7 +130,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
         if (meeting.status === 'live' || meeting.status === 'active') {
             return { label: 'Live', color: 'bg-red-100 text-red-700', icon: Wifi };
         } else if (meeting.status === 'completed') {
-            return { label: 'Completed', color: 'bg-green-100 text-green-700', icon: WifiOff };
+            return { label: 'Completed', color: 'bg-green-100 text-green-700', icon: Bot };
         } else {
             return { label: 'Unknown', color: 'bg-gray-100 text-gray-700', icon: WifiOff };
         }
@@ -155,6 +155,16 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                 </div>
             </div>
 
+            {/* API Key Info */}
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center">
+                    <Bot className="w-4 h-4 text-blue-600 mr-2" />
+                    <span className="text-blue-800 text-sm">
+                        Connected with API key: {meetstreamAPI.apiKey ? `${meetstreamAPI.apiKey.substring(0, 8)}...` : 'Not configured'}
+                    </span>
+                </div>
+            </div>
+
             {/* Tabs */}
             <div className="flex space-x-1 mb-6 bg-gray-100 rounded-lg p-1">
                 <button
@@ -165,8 +175,8 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                             : 'text-gray-600 hover:text-gray-900'
                     }`}
                 >
-                    <Calendar className="w-4 h-4 inline mr-2" />
-                    Recent ({meetings.length})
+                    <Bot className="w-4 h-4 inline mr-2" />
+                    Recent Bots ({meetings.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('live')}
@@ -177,7 +187,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                     }`}
                 >
                     <Wifi className="w-4 h-4 inline mr-2" />
-                    Live ({liveMeetings.length})
+                    Live Bots ({liveMeetings.length})
                 </button>
             </div>
 
@@ -192,7 +202,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                                placeholder="Search meetings by title or participants..."
+                                placeholder="Search bots by name or participants..."
                                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/80 backdrop-blur-sm"
                             />
                         </div>
@@ -224,15 +234,15 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                 {isLoadingMeetings ? (
                     <div className="flex items-center justify-center py-8">
                         <Loader2 className="w-6 h-6 text-blue-600 animate-spin mr-2" />
-                        <span className="text-gray-600">Loading meetings...</span>
+                        <span className="text-gray-600">Loading {activeTab === 'live' ? 'live bots' : 'recent bots'}...</span>
                     </div>
                 ) : currentMeetings.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                         {activeTab === 'live' 
-                            ? 'No live meetings found' 
+                            ? 'No live bots found' 
                             : showRecent 
-                                ? 'No recent meetings found' 
-                                : 'No meetings match your search'
+                                ? 'No recent bots found' 
+                                : 'No bots match your search'
                         }
                     </div>
                 ) : (
@@ -262,6 +272,12 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                                 <StatusIcon className="w-3 h-3 inline mr-1" />
                                                 {status.label}
                                             </span>
+                                            {meeting.bot_name && (
+                                                <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">
+                                                    <Bot className="w-3 h-3 inline mr-1" />
+                                                    {meeting.bot_name}
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-4 text-sm text-gray-600">
                                             <div className="flex items-center">
@@ -280,6 +296,12 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                                     {meeting.participants.length} participants
                                                 </div>
                                             )}
+                                            {meeting.transcript_id && (
+                                                <div className="flex items-center">
+                                                    <Mic className="w-4 h-4 mr-1" />
+                                                    Transcript available
+                                                </div>
+                                            )}
                                         </div>
                                         {meeting.participants && meeting.participants.length > 0 && (
                                             <div className="mt-2 flex flex-wrap gap-1">
@@ -296,6 +318,13 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                                                         +{meeting.participants.length - 3} more
                                                     </span>
                                                 )}
+                                            </div>
+                                        )}
+                                        {meeting.meeting_link && (
+                                            <div className="mt-2">
+                                                <span className="text-xs text-gray-500">
+                                                    Meeting Link: {meeting.meeting_link.substring(0, 50)}...
+                                                </span>
                                             </div>
                                         )}
                                     </div>
@@ -344,7 +373,7 @@ const MeetingSelector = ({ onTranscriptLoaded, onLoadingChange }) => {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                 >
-                    Refresh {activeTab === 'live' ? 'Live' : 'Recent'} Meetings
+                    Refresh {activeTab === 'live' ? 'Live Bots' : 'Recent Bots'}
                 </motion.button>
             </div>
         </motion.div>

@@ -11,6 +11,8 @@ class MeetStreamAPI {
         if (!this.apiKey || !this.apiKey.startsWith('ms_')) {
             console.error('Invalid MeetStream API key format. API key should start with "ms_"');
         }
+        
+        console.log('MeetStream API initialized with key:', this.apiKey ? `${this.apiKey.substring(0, 8)}...` : 'No API key');
     }
 
     // Get headers for API requests - using Token authentication as per Postman collection
@@ -149,12 +151,63 @@ class MeetStreamAPI {
         }
     }
 
-    // Legacy methods for compatibility - now return mock data since the API structure is different
+    // Get audio from bot
+    async getBotAudio(botId) {
+        try {
+            const url = `${this.baseURL}/api/v1/bots/${botId}/get_audio`;
+            console.log(`Fetching bot audio from URL: ${url}`);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: this.getHeaders(),
+            });
+
+            const data = await this.handleResponse(response, 'fetch bot audio');
+            return data;
+        } catch (error) {
+            console.error('Error fetching bot audio:', error);
+            throw error;
+        }
+    }
+
+    // Get manifest from bot
+    async getBotManifest(botId) {
+        try {
+            const url = `${this.baseURL}/api/v1/bots/${botId}/get_manifest`;
+            console.log(`Fetching bot manifest from URL: ${url}`);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: this.getHeaders(),
+            });
+
+            const data = await this.handleResponse(response, 'fetch bot manifest');
+            return data;
+        } catch (error) {
+            console.error('Error fetching bot manifest:', error);
+            throw error;
+        }
+    }
+
+    // Get user's bots (this represents their meetings/sessions)
+    async getUserBots() {
+        try {
+            // Since there's no direct endpoint to list all user bots,
+            // we'll return mock data that represents the user's meeting history
+            console.log('Returning mock bot data (no direct endpoint to list user bots)');
+            return this.getMockMeetings();
+        } catch (error) {
+            console.error('Error fetching user bots:', error);
+            return this.getMockMeetings();
+        }
+    }
+
+    // Legacy methods for compatibility with existing UI
     async getLiveMeetings() {
         try {
             // Since the actual API doesn't have a direct "live meetings" endpoint,
             // we'll return mock data that represents active bots
-            console.log('Returning mock live meetings data (API does not have direct live meetings endpoint)');
+            console.log('Returning mock live meetings data (API uses bot-based structure)');
             return this.getMockLiveMeetings();
         } catch (error) {
             console.error('Error fetching live meetings:', error);
@@ -180,7 +233,9 @@ class MeetStreamAPI {
             const mockMeetings = this.getMockMeetings();
             const filteredMeetings = mockMeetings.filter(meeting => 
                 meeting.title.toLowerCase().includes(query.toLowerCase()) ||
-                meeting.participants.some(p => p.toLowerCase().includes(query.toLowerCase()))
+                meeting.participants.some(p => 
+                    (typeof p === 'string' ? p : p.name || p.email || '').toLowerCase().includes(query.toLowerCase())
+                )
             );
             return { meetings: filteredMeetings };
         } catch (error) {
@@ -215,6 +270,12 @@ class MeetStreamAPI {
                 return await this.getTranscript(meetingId.replace('transcript_', ''));
             }
             
+            // If this is a bot ID, try to get its transcript
+            if (meetingId.startsWith('bot_')) {
+                // For now, return mock transcript since we need the transcript ID
+                return this.getMockTranscript();
+            }
+            
             // Otherwise return mock transcript
             return this.getMockTranscript();
         } catch (error) {
@@ -230,6 +291,19 @@ class MeetStreamAPI {
             if (meetingId.startsWith('transcript_')) {
                 const transcript = await this.getTranscript(meetingId.replace('transcript_', ''));
                 return transcript;
+            }
+            
+            // If it's a bot ID, try to get the transcript
+            if (meetingId.startsWith('bot_')) {
+                // First get bot details to find transcript ID
+                try {
+                    const botDetails = await this.getBotDetails(meetingId);
+                    if (botDetails && botDetails.transcript_id) {
+                        return await this.getTranscript(botDetails.transcript_id);
+                    }
+                } catch (e) {
+                    console.warn('Could not get bot details or transcript:', e);
+                }
             }
             
             // Otherwise return mock transcript
@@ -346,7 +420,7 @@ class MeetStreamAPI {
         ];
     }
 
-    // Get mock transcript
+    // Get mock transcript with realistic meeting content
     getMockTranscript() {
         return {
             transcript_id: 'transcript_001',
@@ -378,8 +452,28 @@ class MeetStreamAPI {
                 },
                 {
                     speaker: 'Carol Davis',
-                    text: 'Agreed. I can help with the CSS media queries once the payment testing is complete.',
+                    text: 'Agreed. I can help with the CSS media queries once the payment testing is complete. What if we gamify the user onboarding process?',
                     timestamp: '2024-01-15T10:06:15Z'
+                },
+                {
+                    speaker: 'Alice Johnson',
+                    text: 'That\'s an interesting idea! We could use AI to recommend learning paths based on how users interact with the interface.',
+                    timestamp: '2024-01-15T10:07:30Z'
+                },
+                {
+                    speaker: 'Bob Smith',
+                    text: 'We could tie that into our feedback system and see which flows work best for different user types.',
+                    timestamp: '2024-01-15T10:08:45Z'
+                },
+                {
+                    speaker: 'Carol Davis',
+                    text: 'What about creating a community aspect where users can share their progress and help each other?',
+                    timestamp: '2024-01-15T10:10:00Z'
+                },
+                {
+                    speaker: 'Alice Johnson',
+                    text: 'We could also use voice interfaces for accessibility - like having users speak their preferences instead of clicking through menus.',
+                    timestamp: '2024-01-15T10:11:15Z'
                 }
             ]
         };
