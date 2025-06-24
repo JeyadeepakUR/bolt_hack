@@ -5,8 +5,10 @@ export const API_CONFIG = {
         BASE_URL: '/v1',
         ENDPOINTS: {
             MEETINGS: '/meetings',
-            TRANSCRIPT: '/transcript',
-            SEARCH: '/search'
+            TRANSCRIPT: '/meetings/{id}/transcript',
+            SEARCH: '/meetings/search',
+            LIVE_MEETINGS: '/meetings/live',
+            MEETING_DETAILS: '/meetings/{id}'
         }
     }
 };
